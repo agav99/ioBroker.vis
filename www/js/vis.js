@@ -2718,7 +2718,7 @@ var vis = {
                             if (typeof value === 'object') 
                                 value = getObjPropValye(value, oids[t].operations[k].arg)
                             break;   
-                    } //switch
+                    } //switch1
                 }
             } //if for
             format = format.replace(oids[t].token, value);
