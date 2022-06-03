@@ -32,6 +32,25 @@ function replaceGroupAttr(inputStr, groupAttrList) {
 }
 
 /***************************************************************/
+function replaceViewParamAttr(inputStr, viewParamsList) {
+    var newString = inputStr;
+    var match = false;
+
+    var ms = inputStr.match(/viewAttr(\d+)/g);
+    if (ms) {
+        ms.forEach(function (m,i) {
+            let n=Number(m.substring(8));
+            if (n < viewParamsList.length){
+                newString = newString.replace(/viewAttr(\d+)/, viewParamsList[n]);
+                match = true;
+            }
+        });
+        if (match) console.log('Replaced ' + inputStr + ' with ' + newString + ' (based on ' + ms + ')');
+    }
+    return {doesMatch: match, newString: newString};
+}
+
+/************************************************************** */
 function getWidgetGroup(views, view, widget) {
     var widgets = views[view].widgets;
     var groupID = widgets[widget].groupid;
