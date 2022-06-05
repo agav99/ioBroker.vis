@@ -14,6 +14,7 @@
  * (Free for non-commercial use).
  */
 
+/*AAA*/
 function replaceGroupAttr(inputStr, groupAttrList) {
     var newString = inputStr;
     var match = false;
