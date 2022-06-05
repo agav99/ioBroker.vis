@@ -292,7 +292,7 @@ var vis = {
     urlParams:          {},
     settings:           {},
     views:              null,
-    widgets:            {},
+    widgets:            {}, // collection of instanced widgets  
     activeView:         '',
     activeViewDiv:      '',
     widgetSets:         visConfig.widgetSets,
@@ -316,11 +316,19 @@ var vis = {
     signals:            {},
     lastChanges:        {},
     bindings:           {},
+    clones:{                   //additional collections for CloneView.
+        subscribeByViews:{},   //Updates when renderWidget and Destroy wigdet
+        visibility:{},
+           signals:{},
+       lastChanges:{},
+          bindings:{}
+    },
     bindingsCache:      {},
     subscribing:        {
         IDs:         [],
         byViews:     {},
-        active:      [],
+        active:      [], //string array for saving tag names
+        activeLinkCount: [], //int array for saving LinkCount of corresponding active tag name. ( full symmetrical for  "Active" array) 
         activeViews: []
     },
     commonStyle:        null,
@@ -806,6 +814,10 @@ var vis = {
         // Set ths views for containers
         $('#visview_' + viewDiv).find('.vis-view-container').each(function () {
             var cview = $(this).attr('data-vis-contains');
+
+            let viewInfo=vis.parseViewURI(cview);
+            cview = viewInfo.viewModelId;
+
             if (!that.views[cview]) {
                 $(this).html('<span style="color: red" class="container-error">' + _('error: view not found.') + '</span>');
             } else if (cview === view || cview === viewDiv) {
@@ -829,6 +841,49 @@ var vis = {
             }
         });
     },
+    /**********************************************************************/
+    //Parse viewURI  format: viewModelId?Param1;Param2;...   оr only:  viewModelId
+    //
+    parseViewURI:function (viewURI)
+    {
+     let resViewName=viewURI;
+     let resViewParams=[];     
+     let resExName='';
+     
+     if (viewURI.indexOf('?')>0)
+      { let viewQ=viewURI.split('?');
+        resViewName=viewQ[0];
+        resViewParams=viewQ[1].split(';')
+        resExName=viewQ[1].replace("?","_").replace(/\./g,"").replace(/;/g,"").replace(/javascript/g,"js");
+        if (resExName.length>0) resExName='_'+resExName;
+      }
+                                                //Example for: "PageA?Param1;Param2;"
+     return {viewModelId: resViewName,          //= "PageA"
+             params  : resViewParams,           //array = [Param1;Param2]
+             exName  : resExName,               //used to create unique DivID for Clons of View  = "_Param1Param2"  (not contain forbidden chars)
+             viewURI : viewURI,                 //= "PageA?Param1;Param2;"
+             isClone : resExName.length>0,      //= true if URI has extra params
+             viewID  : resViewName + resExName  //= "PageA_Param1Param2"
+            }
+    },
+
+    /**********************************************************************/
+    //If CloneView has Container widget, need to append parentViewUri.Params to childViewURI 
+    // to make it unique
+    appendViewParams: function(childViewURI, parentViewUri){
+       let res = childViewURI;
+       if (parentViewUri.isClone){
+
+        childViewURI = childViewURI.trim();
+        if (res.indexOf('?') < 0) res=res+'?' 
+        else 
+        if (res.length>0  &&  res[res.length-1]!=';') res=res+';';
+        res=res + parentViewUri.params.join(';');
+       }
+        return res;
+    }, 
+
+    /**********************************************************************/
     renderViews:        function (viewDiv, views, index, callback) {
         if (typeof index === 'function') {
             callback = index;
@@ -841,10 +896,22 @@ var vis = {
         }
         var item = views[index];
         var that = this;
-        this.renderView(this.views[item.view] ? item.view : viewDiv, item.view, true, function () {
-            that.renderViews(viewDiv, views, index + 1, callback);
-        });
+
+        let viewInfo=vis.parseViewURI(item.view);
+
+        this.renderView(this.views[viewInfo.viewModelId] ? viewInfo.viewModelId : viewDiv, //-> viewDiv
+                       item.view,                                                          //-> view             
+                       true,                                                               //-> hidden             
+                       function () {                                                       //-> callback
+                            that.renderViews(viewDiv, views, index + 1, callback);
+                        });
     },
+    /**********************************************************************/
+    // view - (name of view model) now can be supplemented of ExParams in format: view?Param1;Param2;...
+    // this ExParams can be used for calculate full tagID.
+    // For one view and different ExParams we create new view instance - Clone, and in this case,
+    // "view" can consider as TEMPLATE of view 
+    /**********************************************************************/
     renderView:         function (viewDiv, view, hidden, callback) {
         var that = this;
 
@@ -852,14 +919,18 @@ var vis = {
             callback = hidden;
             hidden = undefined;
         }
+
         if (typeof view === 'boolean') {
             callback = hidden;
             hidden   = undefined;
             view     = viewDiv;
         }
 
-        viewDiv = decodeURIComponent(viewDiv);
-        view = decodeURIComponent(view);
+        //view can contain ExParams (view?Param1;Param2;...)
+        let viewInfo=this.parseViewURI(view);
+        
+        view = decodeURIComponent(viewInfo.viewModelId);
+        viewDiv = decodeURIComponent(viewDiv + viewInfo.exName); //join with Params to have unique ViewClone name
 
         if (!this.editMode && !$('#commonTheme').length) {
             $('head').prepend('<link rel="stylesheet" type="text/css" href="' + ((typeof app === 'undefined') ? '../../' : '') + 'lib/css/themes/jquery-ui/' + (this.calcCommonStyle() || 'redmond') + '/jquery-ui.min.css" id="commonTheme"/>');
@@ -875,11 +946,13 @@ var vis = {
             return false;
         }
 
+        //Prepare Clone data
+        if (viewInfo.isClone)
+           clone_prepareViewData(this, viewInfo);
+
         // try to render background
-
-
         // collect all IDs, used in this view and in containers
-        this.subscribeStates(view, function () {
+        this.subscribeStates(viewInfo, function () {
             var isViewsConverted = false; // Widgets in the views hav no information which WidgetSet they use, this info must be added and this flag says if that happens to store the views
 
             that.views[view].settings.theme = that.views[view].settings.theme || 'redmond';
@@ -910,10 +983,12 @@ var vis = {
                     }
                 }
             }
+
             if (!$view.length) {
                 $('#vis_container').append('<div style="display: none;" id="visview_' + viewDiv + '" ' +
-                    'data-view="' + view + '" ' +
-                    'class="vis-view ' + (viewDiv !== view ? 'vis-edit-group' : '') + '" ' +
+                    'data-view="' + view + '" ' +                               //model View Name
+                    'data-vis-contains="'+ viewInfo.viewURI+'" ' +         //
+                    'class="vis-view ' + ((viewDiv !== view)&& (!viewInfo.isClone)? 'vis-edit-group' : '') + '" ' +
                     (that.views[view].settings.alwaysRender ? 'data-persistent="true"' : '') + '>' +
                     '<div class="vis-view-disabled" style="display: none"></div>' +
                     '</div>');
@@ -970,7 +1045,7 @@ var vis = {
                         }
 
                         if (!that.views[view].widgets[id].renderVisible && !that.views[view].widgets[id].grouped) {
-                            that.renderWidget(viewDiv, view, id);
+                            that.renderWidget(viewDiv, viewInfo, id, 0, true);
                         }
                     }
                 }
@@ -987,6 +1062,13 @@ var vis = {
             var containers = [];
             $view.find('.vis-view-container').each(function () {
                 var cview = $(this).attr('data-vis-contains');
+                
+                if (viewInfo.isClone)
+                    cview = that.appendViewParams(cview, viewInfo);
+               
+                let childviewInfo=vis.parseViewURI(cview);
+                cview = childviewInfo.viewModelId;
+                        
                 if (!that.views[cview]) {
                     $(this).append('error: view not found.');
                     return false;
@@ -994,18 +1076,23 @@ var vis = {
                     $(this).append('error: view container recursion.');
                     return false;
                 }
-                containers.push({thisView: this, view: cview});
+                containers.push({thisView: this,                 //vis-view-container
+                                 view:     childviewInfo.viewURI,
+                                 viewID:   childviewInfo.viewID  
             });
+            });
+
             // add view class
             if (that.views[view].settings['class']) {
                 $view.addClass(that.views[view].settings['class'])
             }
+
             var wait = false;
             if (containers.length) {
                 wait = true;
                 that.renderViews(viewDiv, containers, function (_viewDiv, _containers) {
                     for (var c = 0; c < _containers.length; c++) {
-                        $('#visview_' + _containers[c].view)
+                        $('#visview_' + _containers[c].viewID)
                             .appendTo(_containers[c].thisView)
                             .show();
                     }
@@ -1082,11 +1169,26 @@ var vis = {
             this.preloadImages.cache.push(img);
         }
     },
-    destroyWidget:      function (viewDiv, view, widget) {
-        var $widget = $('#' + widget);
-        if ($widget.length) {
-            var widgets = this.views[view].widgets[widget].data.members;
+    /**************************************************************/
+    // viewDiv - not used now
+    // view - not used now   
+    // widget - actual widgetid (can contain ExName for clone) 
+    // needUpdateCloneAnimateInfo - TRUE only for "destroyView" call
+    //                              FALSE for  "reRenderWidget" call to prevent useless clearing CloneAnimateInfo collections
+    destroyWidget:      function (viewDiv, view, widget, needUpdateCloneAnimateInfo) {
 
+        //widget can contain widgetModelName and ExName (to have unique wid for cloneView)
+        var $widget = $('#' + widget);
+
+        if ($widget.length) {
+            var that = this;
+            
+            //if widget is group find it childs and destroy them
+            
+            //Now we can have clones of views and  widgets, so can't use  this.views[view].widgets[widget]
+            //Need to use actual instances of  views and  widgets 
+            /* let viewinfo=this.parseViewURI(view);
+            var widgets = this.views[view].widgets[widget].data.members;
             if (widgets) {
                 for (var w = 0; w < widgets.length; w++) {
                     if (widgets[w] !== widget) {
@@ -1095,7 +1197,21 @@ var vis = {
                         console.warn('Cyclic structure in ' + widget + '!');
                     }
                 }
+            }*/
+
+            if ($widget.attr('id')[0]==='g'){ //widget is group
+                $widget.find('> .vis-widget').each(function () {
+                    that.destroyWidget(viewDiv, view, $(this).attr('id'));
+                 });
             }
+
+            if (needUpdateCloneAnimateInfo){
+                //if it's Clone Widget need to clear all clone animation colections
+                let isClone = this.widgets[widget] && this.widgets[widget].isClone;  //$widget.attr('data-widget-isclone');
+                if (isClone)
+                    this.clone_clearWidgetAnimateInfo(this,widget);
+            }
+            //delete this.widgets[widget];  //not remove for optimization
 
             try {
                 // get array of bound OIDs
@@ -1112,6 +1228,7 @@ var vis = {
                     $widget.data('bindHandler', null);
                     $widget.data('bound', null);
                 }
+
                 // If destroy function exists => destroy it
                 var destroy = $widget.data('destroy');
                 if (typeof destroy === 'function') {
@@ -1122,19 +1239,39 @@ var vis = {
             }
         }
     },
+    
+    //******************************************************************* */
+    //viewDiv, view, widget - can contain ExName  for CloneView
     reRenderWidget:     function (viewDiv, view, widget) {
         var $widget = $('#' + widget);
         var updateContainers = $widget.find('.vis-view-container').length;
         view    = view    || this.activeView;
         viewDiv = viewDiv || this.activeViewDiv;
 
-        this.destroyWidget(viewDiv, view, widget);
-        this.renderWidget(viewDiv, view, widget, !this.views[viewDiv] && viewDiv !== widget ?
-            viewDiv :
-            (vis.views[view].widgets[widget].groupid ? vis.views[view].widgets[widget].groupid : null));
+        let viewInfo=this.parseViewURI(view); 
+        if (viewDiv==view && viewInfo.isClone)
+           viewDiv=viewInfo.viewID;
+
+        this.destroyWidget(viewDiv, view, widget); //viewDiv, view - not used there now
+
+        let groupId;
+        if (this.widgets[widget]){                         
+              groupId = this.widgets[widget].groupid || null;
+              widget = this.widgets[widget].modelwid || widget; //get widget modelId
+        }
+         else groupId = vis.views[viewInfo.viewModelId].widgets[widget].groupid ? vis.views[view].widgets[widget].groupid : null;
+
+        this.renderWidget(viewDiv, view, widget, 
+                          !viewInfo.isClone && !this.views[viewDiv] && viewDiv !== widget ?
+                            viewDiv :
+                            groupId 
+                          );
 
         updateContainers && this.updateContainers(viewDiv, view);
     },
+
+    //******************************************************************* */
+    //view - always null
     changeFilter:       function (view, filter, showEffect, showDuration, hideEffect, hideDuration) {
         view = view || this.activeView;
         // convert from old style
@@ -1271,9 +1408,10 @@ var vis = {
         }
     },
     isSignalVisible:    function (view, widget, index, val, widgetData) {
-        widgetData = widgetData || this.views[view].widgets[widget].data;
+        widgetData = widgetData || (this.widgets[widget]?.data) ;
+        //widgetData = widgetData || this.views[view].widgets[widget].data;
+        
         var oid = widgetData['signals-oid-' + index];
-
         if (oid) {
             if (val === undefined || val === null) {
                 val = this.states.attr(oid + '.val');
@@ -1523,6 +1661,7 @@ var vis = {
             }
         });
     },
+    /***********************************************************************************/
     addLastChange:      function (view, wid, data) {
         // show last change
         var border = (parseInt(data['lc-border-radius'], 10) || 0) + 'px';
@@ -1593,6 +1732,7 @@ var vis = {
         var text = '<div class="vis-last-change" data-type="' + data['lc-type'] + '" data-format="' + data['lc-format'] + '" data-interval="' + data['lc-is-interval'] + '">' + this.binds.basic.formatDate(this.states.attr(data['lc-oid'] + '.' + (data['lc-type'] === 'last-change' ? 'lc' : 'ts')), data['lc-format'], data['lc-is-interval'], data['lc-is-moment']) + '</div>';
         $('#' + wid).prepend($(text).css(css)).css('overflow', 'visible');
     },
+    /***********************************************************************************/
     isUserMemberOf:     function (user, userGroups) {
         if (!this.userGroups) {
             return true;
@@ -1609,9 +1749,18 @@ var vis = {
         }
         return false;
     },
-    renderWidget:       function (viewDiv, view, id, groupId) {
+
+    /***********************************************************************************/
+    // viewDiv - ID of view Instance. can contain ExName (for View Clones)
+    // view - view (str)  or viewInfo (obj) or ViewURI(str)
+    // id - widget model name 
+    // needUpdateCloneAnimateInfo - bool flag to indicate the need fill CloneAnimateInfo colleactions
+    //                            = TRUE from RenderView  call
+    /***********************************************************************************/
+        renderWidget:       function (viewDiv, view, id, groupId, needUpdateCloneAnimateInfo) {
         var $view;
         var that = this;
+
         if (!groupId) {
             $view = $('#visview_' + viewDiv);
         } else {
@@ -1621,9 +1770,15 @@ var vis = {
             return;
         }
 
-        var widget = this.views[view].widgets[id];
+        let viewInfo={};
+        if (typeof view === 'object') 
+             viewInfo=view;
+        else viewInfo=this.parseViewURI(view); 
+        view = viewInfo.viewModelId; //get model View name  
+        
+        var widget = this.views[view].widgets[id]; //get widget model object
 
-        if (groupId && widget && this.editMode) { //for runtime it's not nessesary (attribut value replaced in getUsedObjectIDs())
+        if (groupId && widget && this.editMode) { //for runtime it's not nessesary, attribute value replaced in getUsedObjectIDs()
             widget = JSON.parse(JSON.stringify(widget));
             var aCount = parseInt(this.views[view].widgets[groupId].data.attrCount, 10);
             if (aCount) {
@@ -1636,6 +1791,14 @@ var vis = {
                     }
                 });
             }
+        }
+
+        let modelwid=id;           //save value, need it later 
+        id = id + viewInfo.exName; //to make unique wid if we have clone view
+
+        if (widget && viewInfo.isClone){
+            widget = JSON.parse(JSON.stringify(widget));  //make copy          
+            clone_updateWidgetAttributes(widget, viewInfo, id);
         }
 
         var isRelative = widget && widget.style && (widget.style.position === 'relative' || widget.style.position === 'static' || widget.style.position === 'sticky');
@@ -1669,6 +1832,12 @@ var vis = {
             }
         }
 
+
+        var $widget = $('#' + id);
+        if (!$widget.length && viewInfo.isClone && needUpdateCloneAnimateInfo){
+            clone_appentWidgetAnimateInfo(this, modelwid, id, viewInfo, widget); //can update widget.data, widget.style
+        }
+
         // Add to the global array of widgets
         try {
             var userGroups;
@@ -1682,13 +1851,17 @@ var vis = {
             }
 
             this.widgets[id] = {
-                wid: id,
+                wid: id,              //here id is unique wid (can contain ExName for CloneView)  
+                modelwid: modelwid,
+                isclone:  viewInfo.isClone,
+                groupid:  groupId,
                 data: new can.Map($.extend({wid: id}, widget.data))
             };
         } catch (e) {
             console.log('Cannot bind data of widget widget:' + id);
             return;
         }
+
         // Register oid to detect changes
         // if (widget.data.oid !== 'nothing_selected')
         //   $.homematic("advisState", widget.data.oid, widget.data.hm_wid);
@@ -1697,7 +1870,6 @@ var vis = {
 
         try {
             //noinspection JSJQueryEfficiency
-            var $widget = $('#' + id);
             if ($widget.length) {
                 var destroy = $widget.data('destroy');
 
@@ -1724,6 +1896,7 @@ var vis = {
                     view:    view,
                     style:   widget.style
                 });
+               
                 if ($widget.length) {
                     if ($widget.parent().attr('id') !== $view.attr('id')) $widget.appendTo($view);
                     $widget.replaceWith(canWidget);
@@ -1755,7 +1928,7 @@ var vis = {
             var $wid = null;
 
             if (widget.style && !widgetData._no_style) {
-                $wid = $('#' + id);
+                $wid = $wid || $('#' + id);
 
                 // fix position
                 for (var attr in widget.style) {
@@ -1827,7 +2000,7 @@ var vis = {
             if (id[0] === 'g') {
                 for (var w = 0; w < widget.data.members.length; w++) {
                     if (widget.data.members[w] !== id) {
-                        this.renderWidget(viewDiv, view, widget.data.members[w], id);
+                        this.renderWidget(viewDiv, viewInfo, widget.data.members[w], id, needUpdateCloneAnimateInfo);
                     }
                 }
             }
@@ -1845,6 +2018,7 @@ var vis = {
             }
         }
     },
+    //******************************************************************************** */
     changeView:         function (viewDiv, view, hideOptions, showOptions, sync, callback) {
         var that = this;
 
@@ -2226,7 +2400,10 @@ var vis = {
         }
     },
     isWidgetHidden:     function (view, widget, val, widgetData) {
-        widgetData = widgetData || this.views[view].widgets[widget].data;
+       
+        //widgetData = widgetData || this.views[view].widgets[widget].data;
+        widgetData = widgetData || (this.widgets[widget]?.data) ;
+
         var oid = widgetData['visibility-oid'];
         var condition = widgetData['visibility-cond'];
         if (oid) {
@@ -2305,15 +2482,18 @@ var vis = {
         }
     },
     isWidgetFilteredOut: function (view, widget) {
-        var w = this.views[view].widgets[widget];
+        var w =  this.widgets[widget] ;
+        //var w = this.views[view].widgets[widget];
+
         var v = this.viewsActiveFilter[view];
         return (w &&
-        w.data &&
-        w.data.filterkey &&
-        widget &&
-        widget.data &&
-        v.length > 0 &&
-        v.indexOf(widget.data.filterkey) === -1);
+                w.data &&
+                w.data.filterkey &&
+                widget &&
+                widget.data &&
+                v.length > 0 &&
+                v.indexOf(w.data.filterkey) === -1
+               );
     },
     calcCommonStyle:    function (recalc) {
         if (!this.commonStyle || recalc) {
@@ -2859,22 +3039,28 @@ var vis = {
 
         this.conn.getHistory(id, options, callback);
     },
+    //******************************************************************************************* */
+    //view - viewURI
+    //******************************************************************************************* */
     destroyView:        function (viewDiv, view) {
         var $view = $('#visview_' + viewDiv);
-
         console.debug('Destroy ' + view);
+
+        let viewinfo=this.parseViewURI(view);
+        view = viewinfo.viewModelId;
 
         // Get all widgets and try to destroy them
         for (var wid in this.views[view].widgets) {
             if (!this.views[view].widgets.hasOwnProperty(wid)) {
                 continue;
             }
-            this.destroyWidget(viewDiv, view, wid);
+            this.destroyWidget(viewDiv, view, wid + viewinfo.exName, true);
         }
 
         $view.remove();
-        this.unsubscribeStates(view);
+        this.unsubscribeStates(viewinfo);
     },
+    //******************************************************************************************* */
     checkLicense: function () {
         if (!this.licTimeout && (typeof visConfig === 'undefined' || visConfig.license === false)) {
             this.licTimeout = setTimeout(function () {
@@ -2890,56 +3076,75 @@ var vis = {
             }.bind(this), 10000);
         }
     },
+    //******************************************************************************************* */
     findAndDestroyViews: function () {
         if (this.destroyTimeout) {
             clearTimeout(this.destroyTimeout);
             this.destroyTimeout = null;
         }
+        //prepare list of used(visible) views. other will be destroyed
         var containers = [];
-        var $createdViews = $('.vis-view');
-        for (var view in this.views) {
-            if (!this.views.hasOwnProperty(view) || view === '___settings') {
-                continue;
+        
+        // Now we have clones  with differents #visview_  ID.  So need new  implementation to  check containers child vies
+      
+        var that = this;
+        //get all "vis-view" objects  except Dialogs
+        var $containers = $('#vis_container').find('.vis-view'); 
+        $containers.each(function () {
+           let visview=$(this);
+           let view= visview.attr('data-view');                       //View model
+           let viewURI= visview.attr('data-vis-contains') || view;    
+           
+           //only for Active or alwaysRender views
+           if (that.views.hasOwnProperty(view) &&
+               (that.views[view].settings.alwaysRender || view === that.activeView)) { //not enough for ViewClones
+            
+                if (containers.indexOf(viewURI) === -1) {
+                    containers.push(viewURI);
             }
-            if (this.views[view].settings.alwaysRender || view === this.activeView) {
-                if (containers.indexOf(view) === -1) {
-                    containers.push(view);
+                
+                //get subviews on containers of visview
+                var $subContainers = visview.find('.vis-view');  
+                $subContainers.each(function () {
+                    let viewURI= $(this).attr('data-vis-contains') || $(this).attr('data-view'); 
+
+                    if (containers.indexOf(viewURI) === -1) {
+                        containers.push(viewURI);
                 }
-                var $containers = $('#visview_' + view).find('.vis-view-container');
-                $containers.each(function () {
-                    var cview = $(this).attr('data-vis-contains');
-                    if (containers.indexOf(cview) === -1) {
-                        containers.push(cview);
+                    });
                     }
-                });
+        })
+
                 // check dialogs too
                 var $dialogs = $('.vis-widget-dialog');
                 $dialogs.each(function () {
                     if ($(this).is(':visible')) {
-                        var $containers = $(this).find('.vis-view-container');
+                $containers = $(this).find('.vis-view');
                         $containers.each(function () {
-                            var cview = $(this).attr('data-vis-contains');
-                            if (containers.indexOf(cview) === -1) {
-                                containers.push(cview);
+                    let viewURI= $(this).attr('data-vis-contains') || $(this).attr('data-view'); 
+
+                    if (containers.indexOf(viewURI) === -1) {
+                        containers.push(viewURI);
                             }
                         });
                     }
                 });
-            }
-        }
-        var that = this;
-        $createdViews.each(function () {
-            var $this = $(this);
-            var view = $this.data('view');
-            var viewDiv = $this.attr('id').substring('visview_'.length);
-            // If this view is used as container
-            if (containers.indexOf(viewDiv) !== -1 || $this.hasClass('vis-edit-group') || $this.data('persistent')) {
-                return;
-            }
 
-            that.destroyView(viewDiv, view);
+        //List prepared, now remove views that are not  in the list 
+        var $createdViews = $('.vis-view');
+        $createdViews.each(function () {
+            var $this = $(this);            //View or CloneView
+            let viewURI=$this.attr('data-vis-contains')||$this.attr('data-view'); 
+            let viewDiv=$this.attr('id').substring('visview_'.length);;
+           
+            if (containers.indexOf(viewURI) !== -1 || $this.hasClass('vis-edit-group') || $this.data('persistent')) {
+                return;}
+
+            that.destroyView(viewDiv, viewURI);
         });
     },
+
+    //**************************************************************************** */    
     destroyUnusedViews: function () {
         this.destroyTimeout && clearTimeout(this.destroyTimeout);
         this.destroyTimeout = null;
@@ -2964,20 +3169,21 @@ var vis = {
         }
     },
     //**********************************************************************************/
-    subscribeStates:    function (view, callback) {
-        if (!view || this.editMode) {
+    subscribeStates:    function (viewInfo, callback) {
+        if (!viewInfo || this.editMode) {
             return callback && callback();
         }
 
         // view yet active
-        if (this.subscribing.activeViews.indexOf(view) !== -1) {
+        if (this.subscribing.activeViews.indexOf(viewInfo.viewURI) !== -1) {
             return callback && callback();
         }
-
-        this.subscribing.activeViews.push(view);
+        this.subscribing.activeViews.push(viewInfo.viewURI);
+        
+        // subscribe
+        let view = viewInfo.viewModelId; // get ViewModelId
         this.subscribing.byViews[view] = this.subscribing.byViews[view] || [];
 
-        // subscribe
         var oids_get = [];               //array for getting Values
         var oids_subscribe = [];         //array for subscribe Values (exclude "local_")
         
@@ -2989,19 +3195,26 @@ var vis = {
 
             if (oid.indexOf('local_') === 0){ 
                 if (((this.states[oid+'.val'] == 'null') || (this.states[oid+'.val'] == null))   //Value can be already set in view user script
-                    && !oids_get.includes(oid))
+                    && !oids_get.includes(oid)
+                   )
                   oids_get.push(oid); //add only to "oids_get" array. will try to find it in URL params  
-
                 continue;
             }
 
+            if (viewInfo.isClone){
+              oid = clone_checkTagIDfoViewAttr(oid,viewInfo)
+              if (!oid) continue;
+            }
+           
             let pos = this.subscribing.active.indexOf(oid);  
             if (pos === -1) {
                 this.subscribing.active.push(oid);
+                this.subscribing.activeLinkCount.push(1);
                 
                 oids_subscribe.push(oid);
                 oids_get.push(oid);
             }
+            else this.subscribing.activeLinkCount[pos]++; //increment tag link count
         }
 
         if (oids_get.length) {
@@ -3023,35 +3236,38 @@ var vis = {
         }
     },
     //******************************************************************************************* */
-    unsubscribeStates:  function (view) {
-        if (!view || this.editMode) return;
+    unsubscribeStates:  function (viewInfo) {
+        if (!viewInfo || this.editMode) return;
 
         // view yet active
-        var pos = this.subscribing.activeViews.indexOf(view);
+        var pos = this.subscribing.activeViews.indexOf(viewInfo.viewURI);
         if (pos === -1) {
             return;
         }
         this.subscribing.activeViews.splice(pos, 1);
 
         // unsubscribe
+        let view = viewInfo.viewModelId;
         var oids = [];
+
         // check every OID
         for (var i = 0; i < this.subscribing.byViews[view].length; i++) {
             var id = this.subscribing.byViews[view][i];
 
+            if (viewInfo.isClone){
+                id = clone_checkTagIDfoViewAttr(id,viewInfo)
+                if (!id) continue;
+              }
+
             pos = this.subscribing.active.indexOf(id);
             if (pos !== -1) {
-                var isUsed = false;
-                // Is OID is used something else
-                for (var v = 0; v < this.subscribing.activeViews.length; v++) {
-                    if (this.subscribing.byViews[this.subscribing.activeViews[v]].indexOf(id) !== -1) {
-                        isUsed = true;
-                        break;
-                    }
-                }
-                if (!isUsed) {
+                this.subscribing.activeLinkCount[pos]--;
+               
+                if (this.subscribing.activeLinkCount[pos]===0) //no more links
+                {
                     oids.push(id);
                     this.subscribing.active.splice(pos, 1);
+                    this.subscribing.activeLinkCount.splice(pos, 1);
                 }
             }
         }
@@ -3088,13 +3304,17 @@ var vis = {
         }
 
         var that=this;
+        {//PROCESS WIDGET VISIBILITY
+            //Define the common function 
+            function CheckWidgetVisibility(view, wid){
+               if (that.subscribing.activeViews.indexOf(view) == -1) //optimization, do not proceed if view is't visible
+                  return;
+                
+                var mmWidget = document.getElementById(wid);
+                if (!mmWidget) return;
 
-        if (!this.editMode && this.visibility[id]) {
-            for (var k = 0; k < this.visibility[id].length; k++) {
-                var mmWidget = document.getElementById(this.visibility[id][k].widget);
-                if (!mmWidget) continue;
-                if (this.isWidgetHidden(this.visibility[id][k].view, this.visibility[id][k].widget, state.val) ||
-                    this.isWidgetFilteredOut(this.visibility[id][k].view, this.visibility[id][k].widget)) {
+                if (that.isWidgetHidden(view, wid, state.val) ||
+                    that.isWidgetFilteredOut(view, wid)) {
                     $(mmWidget).hide();
                     if (mmWidget &&
                         mmWidget._customHandlers &&
@@ -3110,35 +3330,78 @@ var vis = {
                     }
                 }
             }
-        }
 
-        // process signals
-        if (!this.editMode && this.signals[id]) {
-            for (var s = 0; s < this.signals[id].length; s++) {
-                var signal = this.signals[id][s];
-                var mWidget = document.getElementById(signal.widget);
-
-                if (!mWidget) {
-                    continue;
+            //First check visibility[] collection of loading models
+            if (!this.editMode && this.visibility[id]) {
+                for (var k = 0; k < this.visibility[id].length; k++) {
+                    CheckWidgetVisibility(this.visibility[id][k].view, this.visibility[id][k].widget);
                 }
-
-                if (this.isSignalVisible(signal.view, signal.widget, signal.index, state.val)) {
-                    $(mWidget).find('.vis-signal[data-index="' + signal.index + '"]').show();
-                } else {
-                    $(mWidget).find('.vis-signal[data-index="' + signal.index + '"]').hide();
+            }
+            //Next check visibilityClone[] collection of CloneView 
+            if (!this.editMode && this.clones.visibility[id]) {
+                 for (var k = 0; k < this.clones.visibility[id].length; k++) {
+                    CheckWidgetVisibility(this.clones.visibility[id][k].view, this.clones.visibility[id][k].widget);
                 }
             }
         }
+        
+        {//PROCESS WIDGET SIGNALS
+            //Define the common function 
+            function CheckWidgetSignals(view, wid, sindex){
+                if (that.subscribing.activeViews.indexOf(view) == -1) //optimization, do not proceed if view is't visible
+                    return;
 
-        // Process last update
-        if (!this.editMode && this.lastChanges[id]) {
-            for (var l = 0; l < this.lastChanges[id].length; l++) {
-                var update = this.lastChanges[id][l];
-                var uWidget = document.getElementById(update.widget);
+                var mWidget = document.getElementById(wid);
+
+                if (!mWidget) return;
+                
+                if (that.isSignalVisible(view, wid, sindex, state.val)) {
+                    $(mWidget).find('.vis-signal[data-index="' + sindex + '"]').show();
+                } else {
+                    $(mWidget).find('.vis-signal[data-index="' + sindex + '"]').hide();
+                }
+
+        }
+
+        if (!this.editMode && this.signals[id]) {
+            for (var s = 0; s < this.signals[id].length; s++) {
+                var signal = this.signals[id][s];
+                    CheckWidgetSignals(signal.view, signal.widget, signal.index);
+                }
+            }
+
+            if (!this.editMode && this.clones.signals[id]) {
+                for (var s = 0; s < this.clones.signals[id].length; s++) {
+                    var signal = this.clones.signals[id][s];
+                    CheckWidgetSignals(signal.view, signal.widget, signal.index);
+                }
+            }
+                }
+
+        {// Process last update
+            function CheckWidgetLastChanges(view, wid){
+                if (that.subscribing.activeViews.indexOf(view) == -1) //optimization, do not proceed if view is't visible
+                return;
+
+                var uWidget = document.getElementById(wid);
                 if (uWidget) {
                     var $lc = $(uWidget).find('.vis-last-change');
                     var isInterval = $lc.data('interval');
-                    $lc.html(this.binds.basic.formatDate($lc.data('type') === 'last-change' ? state.lc : state.ts, $lc.data('format'), isInterval === 'true' || isInterval === true));
+                    $lc.html(that.binds.basic.formatDate($lc.data('type') === 'last-change' ? state.lc : state.ts, $lc.data('format'), isInterval === 'true' || isInterval === true));
+            }
+        }
+
+        if (!this.editMode && this.lastChanges[id]) {
+            for (var l = 0; l < this.lastChanges[id].length; l++) {
+                var update = this.lastChanges[id][l];
+                    CheckWidgetLastChanges(update.view, update.widget );
+                }
+            }
+
+            if (!this.editMode && this.clones.lastChanges[id]) {
+                for (var l = 0; l < this.clones.lastChanges[id].length; l++) {
+                    var update = this.clones.lastChanges[id][l];
+                    CheckWidgetLastChanges(update.view, update.widget);
                 }
             }
         }
@@ -3152,8 +3415,11 @@ var vis = {
             
                 var value = that.formatBinding(bindItem.format, bindItem.view, bindItem.widget, that.widgets[bindItem.widget]);
                 
-                if (that.views[bindItem.view]){
-                    var widget = that.views[bindItem.view].widgets[bindItem.widget];
+                let modelViewID = bindItem.modelViewID || bindItem.view;        //modelViewID prop set only for clone bindItem
+                let modelWidgetID = bindItem.modelWidgetID || bindItem.widget;  //modelWidgetID prop set only for clone bindItem
+
+                if (that.views[modelViewID]){
+                    var widget = that.views[modelViewID].widgets[modelWidgetID];
                     if (widget)
                         widget[bindItem.type][bindItem.attr] = value;
                 }
@@ -3172,6 +3438,12 @@ var vis = {
             if (!this.editMode && this.bindings[id]) {
             for (var i = 0; i < this.bindings[id].length; i++) {
                     let bindItem = this.bindings[id][i];
+                    sub_CheckWidgetBinding(bindItem);
+                }
+            }
+            if (!this.editMode && this.clones.bindings[id]) {
+                for (var i = 0; i < this.clones.bindings[id].length; i++) {
+                    let bindItem = this.clones.bindings[id][i];
                     sub_CheckWidgetBinding(bindItem);
                 }
             }
@@ -3257,6 +3529,7 @@ var vis = {
             }
         }
     },
+    //******************************************************************************************* */
     updateIframeZoom:   function (zoom) {
         if (zoom === undefined || zoom === null) {
             zoom = document.body.style.zoom;
@@ -3308,6 +3581,7 @@ var vis = {
             }
         }
     },
+
     visibilityOidBinding: function (binding, oid) {
         // if attribute 'visibility-oid' contains binding
         if (binding.attr === 'visibility-oid') {
@@ -3596,6 +3870,7 @@ function main($, onReady) {
         });
     }
 
+    /************************************************************************************************/
     function createIds(IDs, index, callback) {
         if (typeof index === 'function') {
             callback = index;
@@ -3605,6 +3880,7 @@ function main($, onReady) {
         var j;
         var now = Date.now();
         var obj = {};
+       
         for (j = index; j < vis.subscribing.IDs.length && j < index + 100; j++) {
             var _id = vis.subscribing.IDs[j];
             if (vis.states[_id + '.val'] === undefined || vis.states[_id + '.val'] === null) {
