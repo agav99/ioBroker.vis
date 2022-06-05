@@ -378,9 +378,16 @@
                 open: function () {
                     $(this).parent().find('.ui-widget-header button .ui-button-text').html('');
                     $(this).parent().css('z-index', 998);
+	 	    $(this).parent().css('display','inline-block');
+                    $(this).parent().css('vertical-align','top'); 
+
                     //touchscreen fix
                     $dlg.find('.vis-view-container').each(function () {
                         var cview = $(this).attr('data-vis-contains');
+                        
+                        let viewInfo=vis.parseViewURI(cview);
+                        cview=viewInfo.viewModelId;
+
                         if (!vis.views[cview]) {
                             $(this).append('error: view not found.');
                             return false;
@@ -389,7 +396,7 @@
                             return false;
                         }
                         var $this = this;
-                        vis.renderView(cview, cview, false, function (_view) {
+                        vis.renderView(cview, viewInfo.viewURI, false, function (_view) {
                             $('#visview_' + _view)
                                     .appendTo($this)
                                     .show();

@@ -337,8 +337,11 @@
                 } else {
                     $this.parent().find('div.vis-view').hide().appendTo($('#vis_container'));
                 }
+
+                let viewInfo=vis.parseViewURI(view); 
+                view = viewInfo.viewModelId;
                 if (vis.views[view]) {
-                    vis.renderView(view, view, true, function (_view) {
+                    vis.renderView(view, viewInfo.viewURI, true, function (_view) {
                         var $view = $('#visview_' + _view);
                         $view.show().data('persistent', persistent);
                         if (!$this.find('#visview_' + _view).length) {
