@@ -1,7 +1,7 @@
 {
     "common": {
         "name": "vis",
-        "version": "1.4.15",
+        "version": "1.4.16",
         "news": {
             "1.4.15": {
                 "en": "Better check of the offline license",
@@ -142,7 +142,7 @@
             }
         ],
         "restartAdapters": [
-            "vis"
+            "visA"
         ],
         "serviceStates": "lib/states.js",
         "singleton": true,
