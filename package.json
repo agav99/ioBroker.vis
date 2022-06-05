@@ -1,5 +1,5 @@
 {
-  "name": "iobroker.visA",
+  "name": "iobroker.vis",
   "description": "Graphical user interface for ioBroker.",
   "version": "1.4.15",
   "author": {
@@ -13,7 +13,7 @@
   "homepage": "https://github.com/iobroker/iobroker.vis",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/agav99/ioBroker.vis.git"
+    "url": "git+https://github.com/ioBroker/ioBroker.vis.git"
   },
   "keywords": [
     "iobroker",

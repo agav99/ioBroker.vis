@@ -1,6 +1,6 @@
 {
     "common": {
-        "name": "visA",
+        "name": "vis",
         "version": "1.4.15",
         "news": {
             "1.4.15": {
@@ -142,7 +142,7 @@
             }
         ],
         "restartAdapters": [
-            "visA"
+            "vis"
         ],
         "serviceStates": "lib/states.js",
         "singleton": true,
