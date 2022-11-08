@@ -30,76 +30,21 @@ function replaceViewParamAttr(inputStr, viewParamsList) {
 }
 
 //**********************************************************************/
-//Check 'inputStr' for "ViewAttr" substrings  and return converted one 
-function checkForViewAttr(inputStr, viewInfo) {
-   var resStr = inputStr;
+//Check 'inputStr' for "ViewAttr" substrings  and return converted one (return realTagID)   
+function checkForViewAttr(inputStr, viewInfo, RemovePagePrefix=false) {
 
-   if (resStr.indexOf('viewAttr') >= 0){
-      let res=replaceViewParamAttr(resStr, viewInfo.params); //replace "viewAttr"
-      if (res.doesMatch)
-         resStr = res.newString; 
-    }
 
-    return resStr;
-}
-
-//********************************************************************* */
-//for PageClone  It's like fast cache  "modelTagID" <-> "realTagID"    where  "modelTagID"  contains "viewAttr" 
-//using vis.clones.subscribeByViews[viewName] as source
-//
-//for clonePage  (viewInfo.viewID) fill vis.clones.subscribeByViews[ViewCloneID][...ViewAttr№...] = realTagId  
-//INPORTANT: not for EditMode (vis.subscribing.byViews is empty)
-function  cloneSubscribe_prepareViewData(vis, viewInfo){  
-/*
- if (vis.clones.subscribeByViews[viewInfo.viewID])  
-    return; //if already defined - return 
-
- vis.clones.subscribeByViews[viewInfo.viewID] =[]; 
- 
- for (var i = 0; i < vis.subscribing.byViews[viewInfo.viewModelId]?.length; i++) {
-    let modelTagId=vis.subscribing.byViews[viewInfo.viewModelId][i]; //modelTagId can contain 'viewAttr' 
-    
-    if (modelTagId.indexOf('viewAttr') >= 0){
-        let res=replaceViewParamAttr(modelTagId, viewInfo.params); //replace "viewAttr"
-        if (res.doesMatch)
-           vis.clones.subscribeByViews[viewInfo.viewID][modelTagId]=res.newString; //append to array
-      }
- }
- */
-}
-
-//********************************************************************* */
-//for modelTagId return realTagID
-//INPORTANT: not for EditMode (vis.subscribing.byViews is empty)
-function cloneSubscribe_getRealTagID(modelTagId, viewInfo, RemovePagePrefix=false) { 
-   if (modelTagId.indexOf('viewAttr') >= 0){
+   if (inputStr.indexOf('viewAttr') >= 0){
       
       //for visibility/signals/lastChanges/bindings configurations modelTagId containt "PageName_" at the beginniing 
       if (RemovePagePrefix)
-         modelTagId = modelTagId.substring(viewInfo.viewModelId.length+1);
+         inputStr = inputStr.substring(viewInfo.viewModelId.length + 1);
 
-      modelTagId=replaceViewParamAttr(modelTagId, viewInfo.params).newString; //replace "viewAttr"
-   }
+      inputStr = replaceViewParamAttr(inputStr, viewInfo.params).newString; //replace "viewAttr"
+    }
 
-   return modelTagId;    
+    return inputStr;
 }
-
-/*
-function cloneSubscribe_getRealTagID(modelTagId, viewInfo, RemovePagePrefix=false) { 
-   if ((modelTagId.indexOf('viewAttr') >= 0) &&
-       (vis.clones.subscribeByViews[viewInfo.viewID])
-      ){
-         //for visibility/signals/lastChanges/bindings configurations modelTagId containt "PageName_" at the beginniing 
-         if (RemovePagePrefix)
-            modelTagId = modelTagId.substring(viewInfo.viewModelId.length+1);
-
-   
-         return vis.clones.subscribeByViews[viewInfo.viewID][modelTagId]; 
-   }
-   return modelTagId;    
-}*/
-
-
 
 //*********************************************************************/
 // fill:  vis.clones.visibility[RealTagID]
@@ -125,7 +70,7 @@ function clone_appendWidgetAnimateInfo(vis, modelwid, wid, viewInfo){
          for (let i=0; i < vis.visibility[modelTagId].length; i++) {
             if (vis.visibility[modelTagId][i].widget == modelwid){
 
-               ActualTagID=cloneSubscribe_getRealTagID(modelTagId, viewInfo, true);
+               ActualTagID=checkForViewAttr(modelTagId, viewInfo, true);
                if (!ActualTagID) continue;
 
                if (!vis.clones.visibility[ActualTagID]) vis.clones.visibility[ActualTagID] = [];
@@ -144,7 +89,7 @@ function clone_appendWidgetAnimateInfo(vis, modelwid, wid, viewInfo){
          for (let i=0; i < vis.signals[modelTagId].length; i++) {
            if (vis.signals[modelTagId][i].widget == modelwid){
          
-               ActualTagID=cloneSubscribe_getRealTagID(modelTagId, viewInfo, true);
+               ActualTagID=checkForViewAttr(modelTagId, viewInfo, true);
                if (!ActualTagID) continue;
 
                if (!vis.clones.signals[ActualTagID]) vis.clones.signals[ActualTagID] = [];
@@ -164,7 +109,7 @@ function clone_appendWidgetAnimateInfo(vis, modelwid, wid, viewInfo){
          for (let i=0; i < vis.lastChanges[modelTagId].length; i++) {
             if (vis.lastChanges[modelTagId][i].widget == modelwid){
          
-               ActualTagID=cloneSubscribe_getRealTagID(modelTagId, viewInfo,true);
+               ActualTagID=checkForViewAttr(modelTagId, viewInfo,true);
                 if (!ActualTagID) continue;
 
                if (!vis.clones.lastChanges[ActualTagID]) vis.clones.lastChanges[ActualTagID] = [];
@@ -189,7 +134,7 @@ function clone_appendWidgetAnimateInfo(vis, modelwid, wid, viewInfo){
               let oid = JSON.parse(JSON.stringify(model_oid));
 
               //if contain  "ViewAttr" replace it to get real tagId
-              oid.systemOid = cloneSubscribe_getRealTagID(modelTagId, viewInfo, true); 
+              oid.systemOid = checkForViewAttr(modelTagId, viewInfo, true); 
               if (!oid.systemOid)
                   continue;
 
@@ -208,7 +153,7 @@ function clone_appendWidgetAnimateInfo(vis, modelwid, wid, viewInfo){
               
               if (oid.operations && oid.operations[0].arg instanceof Array) {
                   for (var ww = 0; ww <  oid.operations[0].arg.length; ww++) {
-                      ActualTagID=cloneSubscribe_getRealTagID(oid.operations[0].arg[ww].systemOid, viewInfo);
+                      ActualTagID=checkForViewAttr(oid.operations[0].arg[ww].systemOid, viewInfo);
                       if (ActualTagID) {
                           oid.operations[0].arg[ww].systemOid=ActualTagID;
 

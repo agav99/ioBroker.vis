@@ -863,7 +863,7 @@ var vis = {
      let resViewParams=[];     
      let resExName='';
      
-     if (viewURI.indexOf('?')>0)
+     if (viewURI && (viewURI.indexOf('?')>0))
       { let viewQ=viewURI.split('?');
         resViewName=viewQ[0];
         resViewParams=viewQ[1].split(';')
@@ -972,10 +972,6 @@ var vis = {
         }
 
         console.debug('render View:' + viewInfo.viewID);
-
-        //Prepare Clone data
-        if (viewInfo.isClone && !this.editMode)
-           cloneSubscribe_prepareViewData(this, viewInfo);
 
         // try to render background
         // collect all IDs, used in this view and in containers
@@ -3399,7 +3395,7 @@ var vis = {
             }
 
             if (viewInfo.isClone){
-              oid = cloneSubscribe_getRealTagID(oid,viewInfo); //if oid contain "ViewAttr" changein it to realTagId
+              oid = checkForViewAttr(oid,viewInfo); //if oid contain "ViewAttr" changein it to realTagId
               if (!oid) continue;
             }
            
@@ -3452,7 +3448,7 @@ var vis = {
             var id = this.subscribing.byViews[view][i];
 
             if (viewInfo.isClone){
-                id = cloneSubscribe_getRealTagID(id,viewInfo)
+                id = checkForViewAttr(id,viewInfo)
                 if (!id) continue;
               }
 
