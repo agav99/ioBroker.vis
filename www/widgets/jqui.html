@@ -396,7 +396,7 @@
                             return false;
                         }
                         var $this = this;
-                        vis.renderView(cview, viewInfo.viewURI, false, function (_view) {
+                        vis.renderView(cview, viewInfo.viewURI, true, function (_view) {
                             $('#visview_' + _view)
                                     .appendTo($this)
                                     .show();
@@ -440,14 +440,22 @@
             if (persistent) $dlg.find('.vis-view-container').data('persistent', persistent);
 
             if (!vis.editMode) {
+                var moved = false;
                 $(el).parent().find('div.vis-widget-body').on('click touchend', function (event) {
-                    event.stopPropagation();
                     // Protect against two events
                     if (vis.detectBounce(this)) return;
+                    if (moved) return;
+                    event.stopPropagation();
 
                     var $id =  $('#' + $(this).parent().attr('id') + '_dialog');
                     $id.dialog('open');
                     return false;
+                }
+                ).on('touchmove', function () {
+                    moved = true;
+                }
+                ).on('touchstart', function () {
+                    moved = false;
                 });
             } else {
                 $(el).parent().find('div.vis-widget-body').show();

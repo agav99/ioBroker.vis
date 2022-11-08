@@ -26,31 +26,27 @@ function replaceGroupAttr(inputStr, groupAttrList) {
               match = true;
             }
         });
-        if (match) console.log('Replaced ' + inputStr + ' with ' + newString + ' (based on ' + ms + ')');
-    }
-    return {doesMatch: match, newString: newString};
-}
-
-/***************************************************************/
-function replaceViewParamAttr(inputStr, viewParamsList) {
-    var newString = inputStr;
-    var match = false;
-
-    var ms = inputStr.match(/viewAttr(\d+)/g);
-    if (ms) {
-        ms.forEach(function (m,i) {
-            let n=Number(m.substring(8));
-            if (n < viewParamsList.length){
-                newString = newString.replace(/viewAttr(\d+)/, viewParamsList[n]);
-                match = true;
-            }
-        });
-        if (match) console.log('Replaced ' + inputStr + ' with ' + newString + ' (based on ' + ms + ')');
+        if (match) console.log('     Replaced ' + inputStr + ' with ' + newString + ' (based on ' + ms + ')');
     }
     return {doesMatch: match, newString: newString};
 }
 
 /************************************************************** */
+// replace  "groupAttr" substring of  attribute value 'inputStr'  for child Widget of group  'groupId' 
+function checkForGroupAttr(vis, inputStr, groupId, viewModelId){
+    var resStr = inputStr;
+    if (groupId){
+        var aCount = parseInt(vis.views[viewModelId].widgets[groupId].data.attrCount, 10);
+        if (aCount) {
+            resStr = replaceGroupAttr(resStr, vis.views[viewModelId].widgets[groupId].data).newString;
+        }
+    }   
+    return resStr;
+}
+
+
+/************************************************************** */
+//Try find parent groupobj for widget (using project models info vis.viws[].windgets[]) 
 function getWidgetGroup(views, view, widget) {
     var widgets = views[view].widgets;
     var groupID = widgets[widget].groupid;
@@ -72,10 +68,11 @@ function getWidgetGroup(views, view, widget) {
 }
 
 /***************************************************************/
-
-// get valeue of Obj property PropPath. PropPath is string like "Prop1" or "Prop1.Prop2" ...
+// get valuе of Obj property PropPath. PropPath is string like "Prop1" or "Prop1.Prop2" ...
+//Used for calculation "json" binding instruction
 function getObjPropValue(obj, PropPath){
     if (!obj) return undefined;
+
     let parts=PropPath.split('.');
     for (let part of parts){
      obj=obj[part];
@@ -300,26 +297,27 @@ function extractBinding(format) {
 
 //**********************************************************************************/
 //Helper  for finding Group of widget(wid) 
-//avoids repeated searches for a single widget
+//avoids repeated searches for a single widget (optimization)
 function GroupHelper(views){
     this.views = views;
     this.view = null;
     this.wid = null;
-    this.groupwid = null; 
-    this.tryFound = false
+    this.groupwid = undefined; 
+    this.triedFound = false
     
     //reset props for new widget id 
     this.initforWidget = function(view, wid){
         this.view = view;
         this.wid = wid;
-        this.groupwid = null;
-        this.tryFound = false
+        this.groupwid = undefined;
+        this.triedFound = false;
     }  
 
+    //getting GroupID for current widget. Fistr cheking local(saved) variable for optimization
     this.tryGetGroupID = function(){
-        if ((this.groupwid==null) && !this.tryFound){
+        if ( !this.groupwid && !this.triedFound){
             this.groupwid = getWidgetGroup(this.views, this.view, this.wid);
-            this.tryFound = true;
+            this.triedFound = true;
             
             if (this.groupwid)
                this.views[this.view].widgets[this.wid].groupid = this.groupwid;                  
@@ -335,7 +333,8 @@ function GroupHelper(views){
         
             this.tryGetGroupID();
 
-            if (this.groupwid) {
+            //getting group attributes
+            if (this.groupwid && this.views[this.view].widgets[this.groupwid]) {                      //<<<<<< а тут в data только данные по groupAttr ?????
                 let res = replaceGroupAttr(value, this.views[this.view].widgets[this.groupwid].data); //Если индекс группы не найден то должен вернуть undefine
                 if (res.doesMatch) {
                     result = res.newString;
@@ -348,7 +347,6 @@ function GroupHelper(views){
             this.tryGetGroupID();
            }
 
-
         return result;
     }
 }
@@ -360,12 +358,21 @@ function getUsedObjectIDs(views, isByViews) {
         return null;
     }
 
-    var _views = isByViews ? {} : null;
-    var IDs         = [];
-    var visibility  = {};
-    var bindings    = {};
-    var lastChanges = {};
-    var signals     = {};
+    var _views = isByViews ? {} : null;  //null for EditorMode.  After sets this object  to vis.subscribing.byViews{}[]->tagIDs  and for EditMode changing to {}
+                                         //Same as IDs[], but groupig by ViewName.
+                                         //tagID containing "ViewAttr№...." NOT beginning with "ViewName_"  because  already grouping by ViewName
+
+    var IDs         = [];                //=> vis.subscribing.IDs[]->tagIDs  for filling vis.states[]
+                                         //   cannt contain "GroupAttr№..."    
+                                         //   cannt contain "ViewAttr№...." because  its used for creating  item in vis.state array
+
+    var visibility  = {};                //=> vis.visibility{tagID}[] 
+                                         //    cannt contain "GroupAttr№..."
+                                         //      can contain "ViewAttr№...." beginning with "ViewName_". Need to createing clone item late in vis.clones.visibility 
+
+    var bindings    = {};                //=> vis.bindings{tagID}[]
+    var lastChanges = {};                //=> vis.lastChanges{tagID}[]
+    var signals     = {};                //=> vis.signals{tagID}[]
 
     var view;
     var id;
@@ -380,121 +387,140 @@ function getUsedObjectIDs(views, isByViews) {
 
         if (_views) _views[view] = [];
 
+        console.debug('loading view:'+ view)
         for (id in views[view].widgets) {
             if (!views[view].widgets.hasOwnProperty(id)) continue;
            
+            console.debug('   loading widget:'+ id)
+            widgetModel=views[view].widgets[id];
+          
             // Check all attributes
-            var data  = views[view].widgets[id].data;
-            var style = views[view].widgets[id].style;
-
+            var data  = widgetModel.data;
+            var style = widgetModel.style;
+            
             {//Region for version compatibility
             // fix error in naming
-            if (views[view].widgets[id].groupped) {
-                views[view].widgets[id].grouped = true;
-                delete views[view].widgets[id].groupped;
+            if (widgetModel.groupped) {
+                widgetModel.grouped = true;
+                delete widgetModel.groupped;
             }
 
             // rename hqWidgets => hqwidgets
-            if (views[view].widgets[id].widgetSet === 'hqWidgets') {
-                views[view].widgets[id].widgetSet = 'hqwidgets';
+            if (widgetModel.widgetSet === 'hqWidgets') {
+                widgetModel.widgetSet = 'hqwidgets';
             }
 
             // rename RGraph => rgraph
-            if (views[view].widgets[id].widgetSet === 'RGraph') {
-                views[view].widgets[id].widgetSet = 'rgraph';
+            if (widgetModel.widgetSet === 'RGraph') {
+                widgetModel.widgetSet = 'rgraph';
             }
 
             // rename timeAndWeather => timeandweather
-            if (views[view].widgets[id].widgetSet === 'timeAndWeather') {
-                views[view].widgets[id].widgetSet = 'timeandweather';
+            if (widgetModel.widgetSet === 'timeAndWeather') {
+                widgetModel.widgetSet = 'timeandweather';
             }
 
             // convert "Show on Value" to HTML
-            if (views[view].widgets[id].tpl === 'tplShowValue') {
-                views[view].widgets[id].tpl = 'tplHtml';
-                views[view].widgets[id].data['visibility-oid'] = views[view].widgets[id].data.oid;
-                views[view].widgets[id].data['visibility-val'] = views[view].widgets[id].data.value;
-                delete views[view].widgets[id].data.oid;
-                delete views[view].widgets[id].data.value;
+            if (widgetModel.tpl === 'tplShowValue') {
+                widgetModel.tpl = 'tplHtml';
+                widgetModel.data['visibility-oid'] = widgetModel.data.oid;
+                widgetModel.data['visibility-val'] = widgetModel.data.value;
+                delete widgetModel.data.oid;
+                delete widgetModel.data.value;
             }
 
             // convert "Hide on >0/True" to HTML
-            if (views[view].widgets[id].tpl === 'tplHideTrue') {
-                views[view].widgets[id].tpl = 'tplHtml';
-                views[view].widgets[id].data['visibility-cond'] = '!=';
-                views[view].widgets[id].data['visibility-oid'] = views[view].widgets[id].data.oid;
-                views[view].widgets[id].data['visibility-val'] = true;
-                delete views[view].widgets[id].data.oid;
+            if (widgetModel.tpl === 'tplHideTrue') {
+                widgetModel.tpl = 'tplHtml';
+                widgetModel.data['visibility-cond'] = '!=';
+                widgetModel.data['visibility-oid'] = widgetModel.data.oid;
+                widgetModel.data['visibility-val'] = true;
+                delete widgetModel.data.oid;
             }
 
             // convert "Hide on 0/False" to HTML
-            if (views[view].widgets[id].tpl === 'tplHide') {
-                views[view].widgets[id].tpl = 'tplHtml';
-                views[view].widgets[id].data['visibility-cond'] = '!=';
-                views[view].widgets[id].data['visibility-oid'] = views[view].widgets[id].data.oid;
-                views[view].widgets[id].data['visibility-val'] = false;
-                delete views[view].widgets[id].data.oid;
+            if (widgetModel.tpl === 'tplHide') {
+                widgetModel.tpl = 'tplHtml';
+                widgetModel.data['visibility-cond'] = '!=';
+                widgetModel.data['visibility-oid'] = widgetModel.data.oid;
+                widgetModel.data['visibility-val'] = false;
+                delete widgetModel.data.oid;
             }
 
             // convert "Door/Window sensor" to HTML
-            if (views[view].widgets[id].tpl === 'tplHmWindow') {
-                views[view].widgets[id].tpl = 'tplValueBool';
-                views[view].widgets[id].data.html_false = views[view].widgets[id].data.html_closed;
-                views[view].widgets[id].data.html_true = views[view].widgets[id].data.html_open;
-                delete views[view].widgets[id].data.html_closed;
-                delete views[view].widgets[id].data.html_open;
+            if (widgetModel.tpl === 'tplHmWindow') {
+                widgetModel.tpl = 'tplValueBool';
+                widgetModel.data.html_false = widgetModel.data.html_closed;
+                widgetModel.data.html_true = widgetModel.data.html_open;
+                delete widgetModel.data.html_closed;
+                delete widgetModel.data.html_open;
             }
 
             // convert "Door/Window sensor" to HTML
-            if (views[view].widgets[id].tpl === 'tplHmWindowRotary') {
-                views[view].widgets[id].tpl = 'tplValueListHtml8';
-                views[view].widgets[id].data.count = 2;
-                views[view].widgets[id].data.value0 = views[view].widgets[id].data.html_closed;
-                views[view].widgets[id].data.value1 = views[view].widgets[id].data.html_open;
-                views[view].widgets[id].data.value2 = views[view].widgets[id].data.html_tilt;
-                delete views[view].widgets[id].data.html_closed;
-                delete views[view].widgets[id].data.html_open;
-                delete views[view].widgets[id].data.html_tilt;
+            if (widgetModel.tpl === 'tplHmWindowRotary') {
+                widgetModel.tpl = 'tplValueListHtml8';
+                widgetModel.data.count = 2;
+                widgetModel.data.value0 = widgetModel.data.html_closed;
+                widgetModel.data.value1 = widgetModel.data.html_open;
+                widgetModel.data.value2 = widgetModel.data.html_tilt;
+                delete widgetModel.data.html_closed;
+                delete widgetModel.data.html_open;
+                delete widgetModel.data.html_tilt;
             }
 
             // convert "tplBulbOnOff" to tplBulbOnOffCtrl
-            if (views[view].widgets[id].tpl === 'tplBulbOnOff') {
-                views[view].widgets[id].tpl = 'tplBulbOnOffCtrl';
-                views[view].widgets[id].data.readOnly = true;
+            if (widgetModel.tpl === 'tplBulbOnOff') {
+                widgetModel.tpl = 'tplBulbOnOffCtrl';
+                widgetModel.data.readOnly = true;
             }
 
             // convert "tplValueFloatBarVertical" to tplValueFloatBar
-            if (views[view].widgets[id].tpl === 'tplValueFloatBarVertical') {
-                views[view].widgets[id].tpl = 'tplValueFloatBar';
-                views[view].widgets[id].data.orientation = 'vertical';
+            if (widgetModel.tpl === 'tplValueFloatBarVertical') {
+                widgetModel.tpl = 'tplValueFloatBar';
+                widgetModel.data.orientation = 'vertical';
             } 
             }//region end
             
             //Begin handling next widget model
             groupHelper.initforWidget(view, id);
 
+            //----------------------------------------------------------
+            //Check tagid for "viewAttr" and if contain make uniq tag (insert PageName at beginnig of the tagID)
+            //(for the convenience of differences when debuging)
+            function sub_Check_ViewAttr(tagid){
+              if (tagid.indexOf('viewAttr') >= 0)
+                   return view+'_'+tagid; //create uniq tag 
+              else return tagid
+            }
+
+            //----------------------------------------------------------
             //define common finction to adding to subscribing Arrays
-            function sub_AddtoSubscribingArray(tagid, bindObj){
+            function sub_AddtoSubscribingArray(tagid, bindObj=null){
             
                 //if (tagid.indexOf('local_')===0) return;   //adding because "local_" need for getting it state  in subscribeStates method 
                 if (tagid.indexOf('groupAttr')===0) return;  //skip. we prevent subscribe  
 
-                if (IDs.indexOf(tagid) === -1) IDs.push(tagid);
-                if (_views && _views[view].indexOf(tagid) === -1) _views[view].push(tagid);   
+                if (tagid.indexOf('viewAttr') < 0)                  //skip. we prevent subscribe and creatig it state 
+                   if (IDs.indexOf(tagid) === -1) IDs.push(tagid);                               
+                   
+                if (_views && _views[view].indexOf(tagid) === -1)
+                   _views[view].push(tagid);   
 
                 if (bindObj){
+                    tagid = sub_Check_ViewAttr(tagid);
+
                     if (!bindings[tagid]) bindings[tagid] = [];
                     bindings[tagid].push(bindObj);
                 }            
             }    
 
+            //----------------------------------------------------------
             //define common finction to check binging format
+            //(here  'attrValue' already checked for "groupAttr")
             function sub_CheckBindingPresent(attrValue, attr, typeId) {
                 var res=false;
-            
-                attrValue = groupHelper.checkValue(attrValue); //Check attrValue for "groupAttr" and replace it
-            
                 var oids = extractBinding(attrValue);
+
                 if (oids) {
                     res=true;
                     
@@ -590,6 +616,8 @@ function getUsedObjectIDs(views, isByViews) {
 
                 if (typeof attrValue === 'string') {
                   
+                    attrValue = groupHelper.checkValue(attrValue); //Check attrValue for "groupAttr" and replace it
+
                     //try find {xxx} templates in string widget attribute       
                     if (sub_CheckBindingPresent(attrValue, attr, 'data'))
                     {
@@ -602,48 +630,57 @@ function getUsedObjectIDs(views, isByViews) {
                         attrValue &&
                         (attr.match(/oid\d{0,2}$/) || attr.match(/^oid/) || attr.match(/^signals-oid-/) || attr === 'lc-oid')
                        ){
-                        if (attrValue !== 'nothing_selected') {
 
-                            attrValue = groupHelper.checkValue(attrValue);  //check value for "groupAttr" and if is replace it
+                        //Append tagID to subscribe array
+                        if (attrValue !== 'nothing_selected') {
                             sub_AddtoSubscribingArray(attrValue);
                             
-                            if (!vis.editMode &&(savedValue != attrValue)) //for run mode, if "groupAttr" changed to realTag
+                            if (!vis.editMode &&(savedValue != attrValue)) //for run mode, if "groupAttr" changed to realTag 
                                 data[attr]=attrValue;
                         }
+                        
+                        //if contain "ViewAttr" appent prefix "PageName_" (for the convenience of differences when debuging)
+                        tagid = sub_Check_ViewAttr(attrValue); 
 
-                        // Visibility binding
+                        //filling Visibility binding array
                         if (attr === 'visibility-oid') {
-                            attrValue = groupHelper.checkValue(attrValue); 
-
-                            if (!visibility[attrValue]) visibility[attrValue] = [];
-                            visibility[attrValue].push({
+                            if (!visibility[tagid]) visibility[tagid] = [];
+                            visibility[tagid].push({
                                     view: view,
                                     widget: id
                             });
                         }
-
-                        // Signal binding
+                        else
+                        //filling  Signal binding array
                         if (attr.match(/^signals-oid-/) ) {
-                            attrValue = groupHelper.checkValue(attrValue); 
+                            tagid = sub_Check_ViewAttr(attrValue);
 
-                            if (!signals[attrValue]) signals[attrValue] = [];
-                            signals[attrValue].push({
+                            if (!signals[tagid]) signals[tagid] = [];
+                            signals[tagid].push({
                                 view:   view,
                                 widget: id,
                                 index:  parseInt(attr.substring('signals-oid-'.length), 10)
                             });
                         }
-                        // lastChanges
+                        else
+                        //filling  lastChanges array
                         if (attr === 'lc-oid') {
-                            attrValue = groupHelper.checkValue(attrValue); 
+                            tagid = sub_Check_ViewAttr(attrValue);
 
-                            if (!lastChanges[attrValue]) lastChanges[attrValue] = [];
-                            lastChanges[attrValue].push({
+                            if (!lastChanges[tagid]) lastChanges[tagid] = [];
+                            lastChanges[tagid].push({
                                 view:   view,
                                 widget: id
                             });
                         }
-                    } else{
+                    } 
+                    else
+                    //try check "contains_view" attributes                          
+                    if (attrValue && (attr === 'contains_view')) {
+                        if (!vis.editMode &&(savedValue != attrValue)) //for run mode, if "groupAttr" changed to realTag
+                            data[attr]=attrValue;
+                    }
+                    else{
                         var m;
                         // attribute has type="id" (using for groups attr)
                         if ((m = attr.match(/^attrType(\d+)$/)) && data[attr] === 'id') {
@@ -653,17 +690,19 @@ function getUsedObjectIDs(views, isByViews) {
                         }
                     }
                 }
-            }
+            } //.data
 
             // build bindings for styles
             if (style) {
                 for (var cssAttr in style) {
                     if (!style.hasOwnProperty(cssAttr) || !cssAttr) continue;
                     if (typeof style[cssAttr] === 'string') {
-                        sub_CheckBindingPresent(style[cssAttr], cssAttr,'style');
+                       
+                        attrValue = groupHelper.checkValue(style[cssAttr]); //Check attrValue for "groupAttr" and replace it
+                        sub_CheckBindingPresent(attrValue, cssAttr,'style');
                     }
                 }
-            }
+            }//.style
         }
     }
 
@@ -679,10 +718,11 @@ function getUsedObjectIDs(views, isByViews) {
 
                 for (id in views[view].widgets) {
                     if (!views[view].widgets.hasOwnProperty(id)) continue;
+                    widgetModel=views[view].widgets[id];
 
                     // Add all OIDs from this view to parent
-                    if (views[view].widgets[id].tpl === 'tplContainerView' && views[view].widgets[id].data.contains_view) {
-                        var ids = _views[views[view].widgets[id].data.contains_view];
+                    if (widgetModel.tpl === 'tplContainerView' && widgetModel.data.contains_view) {     //ПРОВЕРИТЬ ЧТО ЭТО  <<<<<<<<<<<<<<<<<
+                        var ids = _views[widgetModel.data.contains_view];
                         if (ids) {
                             for (var a = 0; a < ids.length; a++) {
                                 if (ids[a] && _views[view].indexOf(ids[a]) === -1) {
@@ -691,7 +731,7 @@ function getUsedObjectIDs(views, isByViews) {
                                 }
                             }
                         } else {
-                            console.warn('View does not exist: "' + views[view].widgets[id].data.contains_view + '"');
+                            console.warn('View does not exist: "' + widgetModel.data.contains_view + '"');
                         }
                     }
                 }
@@ -699,9 +739,64 @@ function getUsedObjectIDs(views, isByViews) {
         } while (changed);
     }
 
-    return {IDs: IDs, byViews: _views, visibility: visibility, bindings: bindings, lastChanges: lastChanges, signals: signals};
+    return {IDs: IDs, 
+            byViews: _views,
+            visibility: visibility,
+            bindings: bindings,
+            lastChanges: lastChanges, 
+            signals: signals
+        };
+
+ //Notice: All widgets attributes with binding instuctions will be changed to real values  in vis.createIds()
 }
 
+/**********************************************************************************/
 if (typeof module !== 'undefined' && module.parent) {
     module.exports.getUsedObjectIDs = getUsedObjectIDs;
 }
+
+/**********************************************************************************/
+//check all widget data/style attributes  in 'widgetModel' and 
+// - replace all "groupAttr to real value
+// - replace all "viewAttr to real value
+// calc all bindings and replace attribute value
+//
+//ONLY for EDITMODE when rendering widget! (for ordinary and cloning widget)
+//widgetModel  must be a copy of  vis.views[xx].widgets[xx]
+/**********************************************************************************/
+function updateWidgetModel(vis, widgetModel, groupId, widgetId, viewInfo) {
+    var data  = widgetModel.data;
+    var style = widgetModel.style;
+
+    //helper to optimize gettting(replacing) "groupAttr" for one widget
+    //let groupHelper = new GroupHelper(vis.views);
+    //groupHelper.initforWidget(viewInfo.viewModelId, undefined, groupId);
+
+    for (var attr in data) {
+        if (!data.hasOwnProperty(attr) || !attr) continue;
+        var attrValue = data[attr];
+        
+        if (typeof attrValue === 'string') {
+          
+            attrValue = checkForGroupAttr(vis, attrValue, groupId, viewInfo.viewModelId);
+            attrValue = checkForViewAttr(attrValue, viewInfo) //Check attrValue for "viewAttr" and replace it
+            data[attr] = vis.formatBinding(attrValue, viewInfo.viewID, widgetId, widgetModel)
+        }
+    }
+
+    for (var cssAttr in style) {
+        if (!style.hasOwnProperty(cssAttr) || !cssAttr) continue;
+        
+        var attrValue = style[cssAttr];
+        if (typeof attrValue === 'string') {
+
+            attrValue = checkForGroupAttr(vis, attrValue, groupId, viewInfo.viewModelId);
+            attrValue = checkForViewAttr(attrValue, viewInfo) //Check attrValue for "viewAttr" and replace it
+            style[cssAttr] = vis.formatBinding(attrValue, viewInfo.viewID, widgetId, widgetModel)
+        }
+    }
+}
+
+
+
+ /**********************************************************************************/
