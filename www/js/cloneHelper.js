@@ -1,5 +1,4 @@
 /*  Example for pageURI: "PageA?Param1;Param2;"
-
     viewInfo.viewModelId: resViewName,          //= "PageA"
              params  : resViewParams,           //array = [Param1;Param2]
              exName  : resExName,               //used to create unique DivID for Clones of View  = "_Param1"  (not contain forbidden chars)
