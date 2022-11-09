@@ -387,11 +387,11 @@ function getUsedObjectIDs(views, isByViews) {
 
         if (_views) _views[view] = [];
 
-        console.debug('loading view:'+ view)
+        //console.debug('loading view:'+ view)
         for (id in views[view].widgets) {
             if (!views[view].widgets.hasOwnProperty(id)) continue;
            
-            console.debug('   loading widget:'+ id)
+            //console.debug('   loading widget:'+ id)
             widgetModel=views[view].widgets[id];
           
             // Check all attributes

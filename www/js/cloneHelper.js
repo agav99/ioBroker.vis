@@ -187,6 +187,12 @@ function clone_appendWidgetAnimateInfo(vis, modelwid, wid, viewInfo){
          }
    });
 
+   $.map(clonedWidgetModel.style, function (val, key) {
+      if (typeof val === 'string') {
+         clonedWidgetModel.style[key] = checkForViewAttr(val, viewInfo);
+      }
+   });
+
    //check bindings   
    if (!vis.clones.bindingsByWidget.hasOwnProperty(wid))
       return;   
