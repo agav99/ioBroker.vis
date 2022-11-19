@@ -29,7 +29,7 @@ body {
     width: -webkit-calc(100% - 5px)!important;
     width: calc(100% - 2px)!important;
     height: -webkit-calc(100% - 32px)!important;
-    height: calc(100% - 32px)!important;
+    height: calc(100% - 50px)!important;
     position: relative;
     overflow: auto;
     border-bottom-width: 0;

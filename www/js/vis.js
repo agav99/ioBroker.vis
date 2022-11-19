@@ -872,20 +872,6 @@ var vis = {
             }
         });
     },
-
-    /**********************************************************************/
-    //get model for Container widget
-    getContainerWidgetModel: function (parentContainerWidgetId){
-        let  res= undefined;
-        if (parentContainerWidgetId)
-        {
-            let parentContainerInstInfo = this.widgets[parentContainerWidgetId];
-            if (parentContainerInstInfo){
-                res = this.views[parentContainerInstInfo.modelViewId].widgets[parentContainerInstInfo.modelwid];
-            }
-        }
-        return res;
-    },
    
     /**********************************************************************/
     //Parse viewURI  format: viewModelId?Param1;Param2;...   оr only:  viewModelId
@@ -1920,10 +1906,12 @@ var vis = {
         //Getting parentContainerWidget
         if (parentContainerWidgetId)
         {
-            //let parentContainerInstInfo = this.widgets[parentContainerWidgetId];
-            //if (parentContainerInstInfo){
-            //    let containerModel = this.views[parentContainerInstInfo.modelViewId].widgets[parentContainerInstInfo.modelwid];
-            let containerModel = this.getContainerWidgetModel(parentContainerWidgetId);
+            let containerModel = undefined;
+
+            let parentContainerInstInfo = this.widgets[parentContainerWidgetId];
+            if (parentContainerInstInfo){
+                containerModel = this.views[parentContainerInstInfo.modelViewId].widgets[parentContainerInstInfo.modelwid];
+            }
                 
             //auto position widget in parent container
             if (containerModel && containerModel.data.autopos){

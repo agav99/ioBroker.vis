@@ -4977,6 +4977,8 @@ vis = $.extend(true, vis, {
 
                         if (grid || ui.helper.attr('id') !== that.activeWidgets[i]) $mWidget.css({left: x, top: y});
 
+                        that.updateWidgetInfo();
+
                         if (mWidget._customHandlers && mWidget._customHandlers.onMove) {
                             mWidget._customHandlers.onMove(mWidget, that.activeWidgets[i]);
                         }
@@ -5164,6 +5166,7 @@ vis = $.extend(true, vis, {
                           height: ui.size.height, 
                           top:    position.top,
                           left:   position.left};
+            that.updateWidgetInfo();                          
             that.editShowLeadingLines(viewDiv, view);
         };
 
@@ -5893,6 +5896,24 @@ vis = $.extend(true, vis, {
             return false;
         }
     },
+    updateWidgetInfo: function(){
+
+        $('#infoSelecedCount').text(this.activeWidgets.length);
+
+        if (this.activeWidgets.length==1)
+         { 
+            let widgetId = this.activeWidgets[0];
+            let $actualWidget = $('#' + widgetId);
+
+            $('#infoPos').text(parseInt($actualWidget.css('left'), 0) + ';' + parseInt($actualWidget.css('top'), 0));
+            $('#infoSize').text($actualWidget.innerWidth() + ';' + $actualWidget.innerHeight());
+         }
+         else {
+            $('#infoPos').text('-;-');
+            $('#infoSize').text('-;-');
+         }
+    },
+
     onButtonArrows:         function (key, isSize, factor) {
         factor = factor || 1;
         var $focused = $(':focus');
@@ -5990,28 +6011,32 @@ vis = $.extend(true, vis, {
                         this.editApplySize(viewDiv, view, widgetId, null, value);
                     } else
                     if (what === 'top') {
-                        oldValue = $actualWidget.offset().top - viewOffset.top;
+                        oldValue = parseInt($actualWidget.css('top'), 10);
+                        //oldValue = $actualWidget.offset().top - viewOffset.top;
                         if (shift > 0) {
                             value = Math.ceil(oldValue + shift)
                         } else {
                             value = Math.floor(oldValue + shift);
                         }
                         $actualWidget.css(what, value);
-                        if ($actualWidget.offset().top - viewOffset.top === oldValue) {
+                        let newValue = parseInt($actualWidget.css('top'), 10);
+                        if (newValue === oldValue) {
                             value += shift;
                             $actualWidget.css(what, value);
                         }
                         this.editApplyPosition(viewDiv, view, widgetId, value, null);
                     } else
                     if (what === 'left') {
-                        oldValue = $actualWidget.offset().left - viewOffset.left;
+                        oldValue = parseInt($actualWidget.css('left'), 10);
+                        //oldValue = $actualWidget.offset().left - viewOffset.left;
                         if (shift > 0) {
                             value = Math.ceil(oldValue + shift);
                         } else {
                             value =  Math.floor(oldValue + shift);
                         }
                         $actualWidget.css(what, value);
-                        if ($actualWidget.offset().left - viewOffset.left === oldValue) {
+                        let newValue = parseInt($actualWidget.css('left'), 10);
+                        if (newValue === oldValue) {
                             value += shift;
                             $actualWidget.css(what, value);
                         }
@@ -6026,6 +6051,7 @@ vis = $.extend(true, vis, {
                 }
             }
             this.editShowLeadingLines();
+            this.updateWidgetInfo();
 
             if (this.delayedSettings) clearTimeout(this.delayedSettings);
 
@@ -6975,14 +7001,7 @@ vis = $.extend(true, vis, {
             }
         }
 
-        let $activeView = undefined;
-        if (false){//(this.activeViewDiv.indexOf('g0')==0){
-            $activeView = $('.vis-edit-group-widget');
-        }
-        else{ 
-            $activeView = $('#visview_'+ this.activeViewDiv);
-        };
-
+        let $activeView = $('#visview_'+ this.activeViewDiv);
         if ($activeView){
             //$activeView.css({transform : 'scale('+ rangeValue +')'}); 
             //$activeView.css({transform-origin: 'top left'}); 
@@ -6992,6 +7011,8 @@ vis = $.extend(true, vis, {
                     transform : 'scale('+ zoomValue +')'
             });
         }
+
+        $('#infoViewZoom').text(zoomValue);
     }
 });
 

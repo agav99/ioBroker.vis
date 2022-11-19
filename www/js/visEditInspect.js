@@ -2403,6 +2403,7 @@ vis = $.extend(true, vis, {
                 }
             }
             this.$selectActiveWidgets.val(this.activeWidgets);
+            this.updateWidgetInfo();
 
             // Enable disable buttons
             if (this.activeWidgets.length) {
