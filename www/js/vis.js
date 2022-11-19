@@ -758,6 +758,7 @@ var vis = {
                     containers.push({view: view});
                 }
             }
+
             if (containers.length) {
                 cnt++;
                 this.renderViews(that.activeViewDiv, containers, function () {
@@ -820,31 +821,49 @@ var vis = {
         }
         $view.css({width: width, height: height});
     },
-    updateContainers:   function (viewDiv, view) {
-        var that = this;
-        
-        // Set ths views for containers
-        $('#visview_' + viewDiv).find('.vis-view-container').each(function () {
-            var cview = $(this).attr('data-vis-contains');
 
+    /**********************************************************************/
+    updateContainers:   function (viewDiv, view, onlyContainerWidgetId=undefined) {
+        var that = this;
+
+        //Getting all vis "vis-view-container" for view "viewDiv"
+        $('#visview_' + viewDiv).find('.vis-view-container').each(function () {
+
+            //get parent widget  element
+            let $containerWidget = $(this).parent().closest('.vis-widget');
+            let containerWidgetID = $containerWidget  &&  $containerWidget.attr('id') ;
+            
+            //Filter by onlyContainerWidgetId
+            if (onlyContainerWidgetId && 
+                (containerWidgetID != onlyContainerWidgetId)
+                )
+                return;
+
+            var cview = $(this).attr('data-vis-contains');
             let viewInfo=vis.parseViewURI(cview);
             cview = viewInfo.viewModelId;
-
+        
             if (!that.views[cview]) {
                 $(this).html('<span style="color: red" class="container-error">' + _('error: view not found.') + '</span>');
-            } else if (cview === view || cview === viewDiv) {
+            } else 
+            if (cview === view || cview === viewDiv) {
                 $(this).html('<span style="color: red" class="container-error">' + _('error: view container recursion.') + '</span>');
             } else {
                 if ($(this).find('.container-error').length) {
                     $(this).html('');
                 }
-                var targetView = this;
+                var
+                 targetView = this;
                 if (!$(this).find('.vis-widget:first').length) {
-                    that.renderView(cview, viewInfo.viewURI, function (_viewDiv) {
-                        $('#visview_' + _viewDiv)
-                            .appendTo(targetView)
-                            .show();
-                    });
+                    that.renderView(cview, viewInfo.viewURI, 
+                                    true, 
+                                    function (_viewDiv) {
+                                    $('#visview_' + _viewDiv)
+                                        .appendTo(targetView)
+                                        .show();
+                                    },
+                                    containerWidgetID
+                    );
                 } else {
                     $('#visview_' + viewInfo.viewID)
                         .appendTo(targetView)
@@ -853,7 +872,21 @@ var vis = {
             }
         });
     },
-    
+
+    /**********************************************************************/
+    //get model for Container widget
+    getContainerWidgetModel: function (parentContainerWidgetId){
+        let  res= undefined;
+        if (parentContainerWidgetId)
+        {
+            let parentContainerInstInfo = this.widgets[parentContainerWidgetId];
+            if (parentContainerInstInfo){
+                res = this.views[parentContainerInstInfo.modelViewId].widgets[parentContainerInstInfo.modelwid];
+            }
+        }
+        return res;
+    },
+   
     /**********************************************************************/
     //Parse viewURI  format: viewModelId?Param1;Param2;...   оr only:  viewModelId
     //
@@ -901,6 +934,9 @@ var vis = {
     }, 
 
     /**********************************************************************/
+    // callback - then finish
+    // viewDiv - only for passing to callback
+    // views - collection 
     renderViews:        function (viewDiv, views, index, callback) {
         if (typeof index === 'function') {
             callback = index;
@@ -921,7 +957,9 @@ var vis = {
                        true,                                                               //-> hidden             
                        function () {                                                       //-> callback
                             that.renderViews(viewDiv, views, index + 1, callback);
-                        });
+                       },
+                       item.parentContainerWidgetId                                        //-> parentContainerWidgetModelId
+                       );
     },
 
     /**********************************************************************/
@@ -935,8 +973,9 @@ var vis = {
     // view in container: viewDiv=PageC, view=PageC?Param1, hidden=true, callback=xxx
     //    inside function:  view=PageC  viewDiv=PageC_Param1
     // 
+    // parentContainerWidgetId -  container widget element ID
     /**********************************************************************/
-    renderView:         function (viewDiv, view, hidden, callback) {
+    renderView:         function (viewDiv, view, hidden, callback, parentContainerWidgetId=undefined) {
         var that = this;
 
         if (typeof hidden === 'function') {
@@ -1037,14 +1076,16 @@ var vis = {
                         that.renderWidget(view, view, viewDiv);
                         $widget = $('#' + viewDiv);
                     }
-                    $view.append('<div class="group-edit-header" data-view="' + viewDiv + '">' + _('Edit group:') + ' <b>' + viewDiv + '</b><button class="group-edit-close"></button></div>');
-                    $view.find('.group-edit-close').button({
+                    //change to Parent because may be zooming  "vis-view vis-edit-group"
+                    $view.parent().append('<div class="group-edit-header" data-view="' + viewDiv + '">' + _('Edit group:') + ' <b>' + viewDiv + '</b><button class="group-edit-close"></button></div>');
+                    $view.parent().find('.group-edit-close').button({
                         icons: {
                             primary: 'ui-icon-close'
                         },
                         text: false
                     }).data('view', view).css({width: 20, height: 20}).click(function () {
                         var view = $(this).data('view');
+                        $('.group-edit-header').remove();
                         that.changeView(view, view);
                     });
 
@@ -1072,7 +1113,7 @@ var vis = {
                         }
 
                         if (!that.views[view].widgets[id].renderVisible && !that.views[view].widgets[id].grouped) {
-                            that.renderWidget(viewDiv, viewInfo, id, 0, true);
+                            that.renderWidget(viewDiv, viewInfo, id, 0, true, parentContainerWidgetId);
                         }
                     }
                 }
@@ -1088,6 +1129,12 @@ var vis = {
             // move views in container
             var containers = [];
             $view.find('.vis-view-container').each(function () {
+                
+
+                //getting parent container widget Id
+                let $containerWidget = $(this).parent().closest('.vis-widget');
+                let containerWidgetID = $containerWidget  &&  $containerWidget.attr('id') ;
+                
                 var cview = $(this).attr('data-vis-contains');
                 
                 if (viewInfo.isClone)
@@ -1103,10 +1150,11 @@ var vis = {
                     $(this).append('error: view container recursion.');
                     return false;
                 }
-                containers.push({thisView: this,                 //vis-view-container
+                containers.push({thisView: this,                 //vis-view-container (only For callback)
                                  view:     childviewInfo.viewURI,
-                                 viewID:   childviewInfo.viewID  
-            });
+                                 viewID:   childviewInfo.viewID,    //(only For callback)
+                                 parentContainerWidgetId: containerWidgetID //its not modelID, its div Id
+                                });
             });
 
             // add view class
@@ -1117,7 +1165,8 @@ var vis = {
             var wait = false;
             if (containers.length) {
                 wait = true;
-                that.renderViews(viewDiv, containers, function (_viewDiv, _containers) {
+                that.renderViews(viewDiv, containers, 0, function (_viewDiv, _containers) {
+                    //callindg aftre process all containers on View _viewDiv
                     for (var c = 0; c < _containers.length; c++) {
                         $('#visview_' + _containers[c].viewID)
                             .appendTo(_containers[c].thisView)
@@ -1218,24 +1267,6 @@ var vis = {
             
             console.debug('  destroy widget: ' + widget + ' on '+viewDiv);
 
-            //var updateContainers = $widget.find('.vis-view-container').length;
-
-            //if widget is group find it childs and destroy them
-            //Now we can have clones of views and  widgets, so can't use  this.views[view].widgets[widget]
-            //Need to use actual instances of  views and  widgets 
-            /*let viewinfo=this.parseViewURI(view);
-            var widgets = this.views[view].widgets[widget].data.members;
-            if (widgets) {
-                /*for (var w = 0; w < widgets.length; w++) {
-                    if (widgets[w] !== widget) {
-                        this.destroyWidget(viewDiv, view, widgets[w]);
-                    } else {
-                        console.warn('Cyclic structure in ' + widget + '!');
-                    }
-                }
-            }*/
-
-            //var hascontainer = $widget.find('.vis-view-container');
             var $subContainers = $widget.find('.vis-view');  
             $subContainers.each(function () {
                 var $this = $(this);            //View or CloneView
@@ -1298,8 +1329,8 @@ var vis = {
     //  editor
     //
     //viewDiv, view, widget - can contain ExName  for CloneView
-    reRenderWidget:     function (viewDiv, view, widget) {
-        var $widget = $('#' + widget);
+    reRenderWidget:     function (viewDiv, view, widgetId) {
+        var $widget = $('#' + widgetId);
         var updateContainers = $widget.find('.vis-view-container').length;
         view    = view    || this.activeView;
         viewDiv = viewDiv || this.activeViewDiv;
@@ -1308,25 +1339,33 @@ var vis = {
         if (viewDiv==view && viewInfo.isClone)
            viewDiv=viewInfo.viewID;
         
-        console.debug('reRenderWidget start widget:' + widget + ' on:'+viewInfo.viewID);
+        console.debug('reRenderWidget start widget:' + widgetId + ' on:'+viewInfo.viewID);
 
-        this.destroyWidget(viewDiv, view, widget); //viewDiv, view - not used there now
+        this.destroyWidget(viewDiv, view, widgetId); //viewDiv, view - not used there now
 
         let groupId;
-        if (this.widgets[widget]){                         
-              groupId = this.widgets[widget].groupid || null;
-              widget = this.widgets[widget].modelwid || widget; //get widget modelId
-        }
-        else groupId = (!viewInfo.isClone && vis.views[view].widgets[widget].groupid) ? vis.views[view].widgets[widget].groupid : null;
+        let modelWid = undefined;
+        let parentContainerWidgetId = undefined;
 
-        this.renderWidget(viewDiv, view, widget, 
-                          !viewInfo.isClone && !this.views[viewDiv] && viewDiv !== widget ?
-                            viewDiv :
-                            groupId 
+        if (this.widgets[widgetId]){                         
+              groupId = this.widgets[widgetId].groupid || null;
+              modelWid = this.widgets[widgetId].modelwid || widgetId; //get widget modelId
+              parentContainerWidgetId = this.widgets[widgetId].parentContainerWidgetId;
+        }
+        else 
+        {   modelWid = widgetId;
+            groupId = (!viewInfo.isClone && vis.views[view].widgets[modelWid].groupid) ? vis.views[view].widgets[modelWid].groupid : null;
+        }
+
+        this.renderWidget(viewDiv, view, 
+                          modelWid, 
+                          !viewInfo.isClone && !this.views[viewDiv] && viewDiv !== modelWid ? viewDiv : groupId,
+                          parentContainerWidgetId 
                           );
 
-        updateContainers && this.updateContainers(viewDiv, view);
-        console.debug('reRenderWidget done widget:' + widget + ' on:'+viewInfo.viewID);
+        updateContainers && this.updateContainers(viewDiv, view, widgetId);  
+
+        console.debug('reRenderWidget done widget:' + widgetId + ' on:'+viewInfo.viewID);
     },
 
     //******************************************************************* */
@@ -1818,7 +1857,7 @@ var vis = {
     //                            = FALSE when rerender Widget
     // groupId - group widgetId (define when recursive render of group members or RerenderWidget)
     /***********************************************************************************/
-    renderWidget:       function (viewDiv, view, id, groupId, needUpdateCloneAnimateInfo=false) {
+    renderWidget:       function (viewDiv, view, id, groupId, needUpdateCloneAnimateInfo=false, parentContainerWidgetId=undefined) {
         var $view;
         var that = this;
 
@@ -1842,27 +1881,6 @@ var vis = {
             console.error('cannt get widget model:'+id+' on view:'+view);
             return;
         }
-
-        //let widgetCopied = false;
-        //for group member widget reaplace "data" attributes  with "groupAttr"    
-        //for runtime it's not nessesary, attribute value replaced in getUsedObjectIDs()
-        /*if (groupId &&  this.editMode) {
-            widgetCopied = true;
-            widget = JSON.parse(JSON.stringify(widget)); //make copy
-            var aCount = parseInt(this.views[view].widgets[groupId].data.attrCount, 10);
-            if (aCount) {
-                $.map(widget.data, function (val, key) {
-                    if (typeof val === 'string') {
-                        //check string data attribute for "groupAttr"    
-                        var result = replaceGroupAttr(val, that.views[view].widgets[groupId].data);
-                        if (result.doesMatch) {
-                            widget.data[key] = result.newString || '';  
-                            //ЗАЧЕМ!!! чтобы в EditMode  показать сразу значения?? но почему STYLES не проверям <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-                        }
-                    }
-                });
-            }
-        }*/
 
         let modelwid=id;           //save value, need it later 
         id = id + viewInfo.exName; //to make unique wid if we have cloned view
@@ -1897,6 +1915,27 @@ var vis = {
             }
 
             widgetModelforClone = widget;  
+        }
+
+        //Getting parentContainerWidget
+        if (parentContainerWidgetId)
+        {
+            //let parentContainerInstInfo = this.widgets[parentContainerWidgetId];
+            //if (parentContainerInstInfo){
+            //    let containerModel = this.views[parentContainerInstInfo.modelViewId].widgets[parentContainerInstInfo.modelwid];
+            let containerModel = this.getContainerWidgetModel(parentContainerWidgetId);
+                
+            //auto position widget in parent container
+            if (containerModel && containerModel.data.autopos){
+                let dX = Math.floor(Number(widget.style.left.slice(0,-2))/10);
+                let dY = Math.floor(Number(widget.style.top.slice(0,-2))/10);
+
+                widget.style["z-index"] = (dY*1000 + dX); 
+                widget.style.left = 0;
+                widget.style.top = 0;
+                widget.style.height = '100%';
+                widget.style.width = '100%';
+            }
         }
 
 
@@ -1949,8 +1988,10 @@ var vis = {
             this.widgets[id] = {
                     wid: id,               //here id is unique wid (can contain ExName for CloneView)  w0000001_clone1
                modelwid: modelwid,         //w0000001 
+            modelViewId: view,  
                 isClone: viewInfo.isClone, 
                 groupid: groupId,
+parentContainerWidgetId: parentContainerWidgetId, //               
        widgetModelClone: widgetModelforClone, //save model only for clones. For non Clones using this.views[xx].widgets[xx] (memory optimizatin) 
                    data: new can.Map($.extend({wid: id}, widget.data))
             };
@@ -2119,6 +2160,8 @@ var vis = {
     changeView:         function (viewDiv, view, hideOptions, showOptions, sync, callback) {
         var that = this;
 
+        console.log('*********************************** changeView. '+viewDiv+' | '+view);
+
         if (typeof view === 'object') {
             callback = sync;
             sync = showOptions;
@@ -2255,6 +2298,7 @@ var vis = {
             });
         }
     },
+    //****************************************************************** */
     selectAutoFocus: function () {
         var $view = $('#visview_' + this.activeView);
         var $inputs = $view.find('input[autofocus]');
@@ -2268,9 +2312,14 @@ var vis = {
             $inputs[0].select();
         }
     },
+    //****************************************************************** */
     postChangeView:     function (viewDiv, view, callback) {
         this.activeView = view;
         this.activeViewDiv = viewDiv;
+
+        if (this.editMode){
+            this.UpdateEditorActiveViewZoom();
+        }
         /*$('#visview_' + viewDiv).find('.vis-view-container').each(function () {
          $('#visview_' + $(this).attr('data-vis-contains')).show();
          });*/
@@ -2303,6 +2352,7 @@ var vis = {
         }
         this.updateIframeZoom();
     },
+    //****************************************************************** */
     loadRemote:         function (callback, callbackArg) {
         var that = this;
         if (!this.projectPrefix) {
@@ -3080,8 +3130,22 @@ var vis = {
                     that.visibilityOidBinding(bindItem, value);
                 }
 
+                // if need rerender widget    
                 if (callback){
-                     callback(bindItem.view, bindItem.widget); 
+                    //Пробуем оптимизировать  не всегда выполнять rerenderWidget 
+                    var $widget = $('#' + bindItem.widget);
+                    if ($widget) 
+                       { 
+                        if (bindItem.attr=="background-color") $widget.css("background-color",value);
+                        else
+                        if (bindItem.attr=="html") $widget.html(value);
+                        //font-weight/height/left/top/width/
+
+                        else callback(bindItem.view, bindItem.widget); 
+                      }
+                    else {
+                        callback(bindItem.view, bindItem.widget); 
+                    }
                 }
             }
         }

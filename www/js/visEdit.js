@@ -322,6 +322,7 @@ vis = $.extend(true, vis, {
             }
 
         });
+        
         var $panAddWidget = $('#pan_add_wid');
         $panAddWidget.resizable({
             handles:  'e',
@@ -4785,10 +4786,13 @@ vis = $.extend(true, vis, {
     dragging:               false,
     draggable:              function (viewDiv, view, obj) {
         var origX, origY;
+        var prevStepdX,prevStepdY;
         var that = this;
         var draggableOptions;
         viewDiv = viewDiv || this.activeView;
         view = view || viewDiv;
+
+         //bug fix: https://stackoverflow.com/questions/17098464/jquery-ui-draggable-css-transform-causes-jumping
 
         draggableOptions = {
             cancel: false,
@@ -4800,8 +4804,14 @@ vis = $.extend(true, vis, {
                 if (that.gridWidth < 1 || isNaN(that.gridWidth)) that.gridWidth = 10;
                 that.views[view].settings.snapType = parseInt(that.views[view].settings.snapType, 10);
 
-                origX = ui.position.left;
-                origY = ui.position.top;
+                //console.log("start "+ui);
+                $(this).css('cursor', 'pointer');
+
+                origX = parseInt($(this).css('left'), 10);
+                origY = parseInt($(this).css('top'), 10);
+                prevStepdX = 0;
+                prevStepdY = 0;
+
                 that.dragging = true;
             },
             stop:   function (event, ui) {
@@ -4856,6 +4866,7 @@ vis = $.extend(true, vis, {
 
                     $('#vis_container').find('.vis-leading-line').remove();
                 }
+
                 $('#inspect_css_top').val(that.findCommonValue(view, that.activeWidgets,  'top', true));
                 $('#inspect_css_left').val(that.findCommonValue(view, that.activeWidgets, 'left', true));
                 that.save();
@@ -4864,96 +4875,117 @@ vis = $.extend(true, vis, {
                 }, 20);
 
             },
+            
             drag:   function (event, ui) {
                 var grid;
+                
                 if (that.views[view].settings.snapType === 2) {
                     grid = parseInt(that.views[view].settings.gridSize, 10);
                 } else {
                     grid = 0;
                 }
 
-                var elementPosition = ui.offset;
-                var parentPosition = ui.helper.parent().offset();
-                if (!parentPosition) return;
-                var position = {left: elementPosition.left - parentPosition.left, top: elementPosition.top - parentPosition.top};
+                var viewZoom = that.views[view].Zoom || 1;
 
-                var moveX = position.left - origX;
-                var moveY = position.top  - origY;
+                //Смещение от старта 
+                var deltaFromStart = {dX: (ui.position.left - ui.originalPosition.left) / viewZoom,
+                                      dY: (ui.position.top  - ui.originalPosition.top) / viewZoom
+                                     };
+                //новые коордитнаты перетаскиваемого примитива
+                let newX = origX + deltaFromStart.dX;
+                let newY = origY + deltaFromStart.dY;
 
-                var xDiff;
-                var yDiff;
-                // if grid enabled
-                if (grid) {
-                    xDiff = position.left % grid;
-                    yDiff = position.top  % grid;
+                //Коррекция newX/newX (выравнивание по сетке)
+                if (grid > 0){
+                    let xDiff = newX % grid;
+                    let yDiff = newY % grid;	
                     if (xDiff) {
                         if (xDiff < grid / 2) {
-                            position.left += xDiff;
+                            newX -= xDiff;
                         } else {
-                            position.left += grid - xDiff;
+                            newX += grid - xDiff;
                         }
                     }
 
                     if (yDiff) {
                         if (yDiff < grid / 2) {
-                            position.top += yDiff;
+                            newY -= yDiff;
                         } else {
-                            position.top += grid - yDiff;
+                            newY += grid - yDiff;
                         }
                     }
+                    deltaFromStart.dX = newX - origX; 
+                    deltaFromStart.dY = newY - origY; 
                 }
 
-                origX = position.left;
-                origY = position.top;
+                //новое положение перетаскиваемого объекта
+                ui.position.left = newX;
+                ui.position.top  = newY;
 
-                for (var i = 0; i < that.activeWidgets.length; i++) {
-                    if (!that.views[view].widgets[that.activeWidgets[i]])  {
-                        console.error('Something is wrong! "' + that.activeWidgets[i] + '" is not in "' + view + '"');
-                        continue;
-                    }
-                    var _position = that.views[view].widgets[that.activeWidgets[i]].style['position'];
-                    if (_position === 'relative' || _position === 'static' || _position === 'sticky') continue;
-                    var mWidget  = document.getElementById(that.activeWidgets[i]);
-                    var $mWidget = $(mWidget);
-                    var pos = {
-                        left: parseInt($mWidget.css('left'), 10),
-                        top:  parseInt($mWidget.css('top'),  10)
-                    };
-                    var x = pos.left + moveX;
-                    var y = pos.top  + moveY;
+                //смещение за шаг
+                var deltaOneStep = {dX: Math.floor(deltaFromStart.dX - prevStepdX), 
+                dY: Math.floor(deltaFromStart.dY - prevStepdY)
+                };
+                //сохраняем значение 
+                if (deltaOneStep.dX !=0 ) 		
+                prevStepdX = Math.floor(deltaFromStart.dX);
+                if (deltaOneStep.dY !=0 ) 		
+                prevStepdY = Math.floor(deltaFromStart.dY);
 
-                    // if grid enabled
-                    if (grid) {
-                        xDiff = x % grid;
-                        yDiff = y % grid;
-                        if (xDiff) {
-                            if (xDiff < grid / 2) {
-                                x -= xDiff;
-                            } else {
-                                x += grid - xDiff;
+                if ((deltaOneStep.dX !=0)||(deltaOneStep.dY !=0))
+                {
+                    for (var i = 0; i < that.activeWidgets.length; i++) {
+                        if (!that.views[view].widgets[that.activeWidgets[i]])  {
+                            console.error('Something is wrong! "' + that.activeWidgets[i] + '" is not in "' + view + '"');
+                            continue;
+                        }
+
+                        var _position = that.views[view].widgets[that.activeWidgets[i]].style['position'];
+                        if (_position === 'relative' || _position === 'static' || _position === 'sticky') continue;
+
+                        var mWidget  = document.getElementById(that.activeWidgets[i]);
+                        var $mWidget = $(mWidget);
+                        var pos = {
+                                    left: parseInt($mWidget.css('left'), 10),
+                                    top:  parseInt($mWidget.css('top'),  10)
+                                };
+                        var x = pos.left + deltaOneStep.dX;
+                        var y = pos.top  + deltaOneStep.dY;
+
+                        // if grid enabled
+                        if (grid) {
+                            let xDiff = x % grid;
+                            let yDiff = y % grid;
+                            if (xDiff) {
+                                if (xDiff < grid / 2) {
+                                    x -= xDiff;
+                                } else {
+                                    x += grid - xDiff;
+                                }
+                            }
+
+                            if (yDiff) {
+                                if (yDiff < grid / 2) {
+                                    y -= yDiff;
+                                } else {
+                                    y += grid - yDiff;
+                                }
                             }
                         }
 
-                        if (yDiff) {
-                            if (yDiff < grid / 2) {
-                                y -= yDiff;
-                            } else {
-                                y += grid - yDiff;
-                            }
+                        $('#widget_helper_' + that.activeWidgets[i]).css({left: x - 2, top: y - 2});
+
+                        if (grid || ui.helper.attr('id') !== that.activeWidgets[i]) $mWidget.css({left: x, top: y});
+
+                        if (mWidget._customHandlers && mWidget._customHandlers.onMove) {
+                            mWidget._customHandlers.onMove(mWidget, that.activeWidgets[i]);
                         }
                     }
-
-                    $('#widget_helper_' + that.activeWidgets[i]).css({left: x - 2, top: y - 2});
-
-                    if (grid || ui.helper.attr('id') !== that.activeWidgets[i]) $mWidget.css({left: x, top: y});
-
-                    if (mWidget._customHandlers && mWidget._customHandlers.onMove) {
-                        mWidget._customHandlers.onMove(mWidget, that.activeWidgets[i]);
-                    }
-                }
                 that.editShowLeadingLines(viewDiv, view);
+                };
             }
         };
+
         if (this.views[view].settings.snapType === 1) {
             draggableOptions.snap = '#vis_container div.vis-widget';
         } else
@@ -4977,6 +5009,7 @@ vis = $.extend(true, vis, {
             $this.draggable(draggableOptions);
         });
     },
+
     editResizeGroup:        function (viewDiv, view) {
         var that = this;
         var $group = $('#' + viewDiv).addClass('vis-resize-group');
@@ -5030,12 +5063,14 @@ vis = $.extend(true, vis, {
 
             if (!that.views[view].widgets[widget].style) that.views[view].widgets[widget].style = {};
 
-            var elementPosition = ui.element.offset();
+            /*var elementPosition = ui.element.offset();
             var parentPosition = ui.element.parent().offset();
-            var position = {left: elementPosition.left - parentPosition.left, top: elementPosition.top - parentPosition.top};
-
-            position.top  = parseInt(position.top, 10);
-            position.left = parseInt(position.left, 10);
+            var position = {left: elementPosition.left - parentPosition.left, top: elementPosition.top - parentPosition.top};*/
+            var position = {left: parseInt(ui.element.css('left'), 10),
+                            top:  parseInt(ui.element.css('top'), 10)
+                           };
+            //position.top  = parseInt(position.top, 10);
+            //position.left = parseInt(position.left, 10);
             var w = parseInt(ui.element.innerWidth(),  10);
             var h = parseInt(ui.element.innerHeight(), 10);
 
@@ -5060,13 +5095,18 @@ vis = $.extend(true, vis, {
             that.save();
             $('#vis_container').find('.vis-leading-line').remove();
         };
+
         var resize = function (event, ui) {
             var grid = parseInt(that.views[view].settings.gridSize, 10);
 
-            var elementPosition = ui.element.offset();
+            /*var elementPosition = ui.element.offset();
             var parentPosition = ui.element.parent().offset();
             var position = {left: elementPosition.left - parentPosition.left, top: elementPosition.top - parentPosition.top};
-
+            */
+            var position = {left: parseInt(ui.element.css('left'), 10),
+                            top:  parseInt(ui.element.css('top'), 10)
+                           };
+           
             // if grid enabled
             if (that.views[view].settings.snapType === 2 && grid) {
                 var oldSize = ui.oldSize || ui.originalSize;
@@ -5120,9 +5160,13 @@ vis = $.extend(true, vis, {
                 width:  ui.size.width  + 3,
                 height: ui.size.height + 3
             });
-            ui.oldSize = {width: ui.size.width, height:  ui.size.height, top: position.top, left: position.left};
+            ui.oldSize = {width:  ui.size.width, 
+                          height: ui.size.height, 
+                          top:    position.top,
+                          left:   position.left};
             that.editShowLeadingLines(viewDiv, view);
         };
+
         obj.each(function () {
             var $this = $(this);
             var wid = $this.attr('id');
@@ -5139,6 +5183,8 @@ vis = $.extend(true, vis, {
 
             resizableOptions.stop   = stop;
             resizableOptions.resize = resize;
+            resizableOptions.zIndex = 100000;
+
             if ((position !== 'relative' && position !== 'static' && position !== 'sticky')) {
                 resizableOptions.handles = 'n, e, s, w, nw, ne, sw, se';
             }
@@ -5152,11 +5198,13 @@ vis = $.extend(true, vis, {
         $view.droppable({
             accept: '.wid-prev',
             drop: function (event, ui) {
+                var viewZoom = that.views[view].Zoom || 1;
+
                 var $container = $('#vis_container');
                 var viewPos = $container.position();
                 var addPos = {
-                    left: ui.position.left - $('#toolbox').width() + $container.scrollLeft() + 5,
-                    top:  ui.position.top  - viewPos.top           + $container.scrollTop()  + 8
+                    left: (ui.position.left - $('#toolbox').width()  + $container.scrollLeft())/viewZoom + 5,
+                    top:  (ui.position.top  - viewPos.top            + $container.scrollTop())/viewZoom  + 8
                 };
 
                 addPos.left = addPos.left.toFixed(0) + 'px';
@@ -6708,6 +6756,8 @@ vis = $.extend(true, vis, {
         $dlg.find('.dialog-wizard-select').html(options);
         if (attr) $dlg.find('.dialog-wizard-select').val(attr);
     },
+    
+    //**************************************************************************** */
     editWidgetsRect:        function (viewDiv, view, widgets, groupId) {
         if (typeof widgets !== 'object') widgets = [widgets];
         var pos = {
@@ -6722,13 +6772,21 @@ vis = $.extend(true, vis, {
         } else {
             viewOffset = $('#visview_' + viewDiv).offset();
         }
+        
+        let viewModel = vis.views[view]
+        let viewZoom = 1;
+        if (viewModel){
+            viewZoom = viewModel.Zoom;
+        }
+
+
         // find common coordinates
         for (var w = 0; w < widgets.length; w++) {
             var $w = $('#' + widgets[w]);
             if (!$w.length) continue;
             var offset = $w.offset();
-            var top  = offset.top  - viewOffset.top;
-            var left = offset.left - viewOffset.left;
+            var top  = (offset.top  - viewOffset.top) / viewZoom;
+            var left = (offset.left - viewOffset.left) / viewZoom;
             // May be bug?
             if (!left && !top) {
                 left = parseInt($w[0].style.left || '0', 10) + parseInt($w[0].offsetLeft, 10);
@@ -6902,9 +6960,42 @@ vis = $.extend(true, vis, {
             var bt = $(b).text().toLowerCase();
             return (at > bt) ? 1 : ((at < bt) ? - 1 : 0);
         }));
+    },
+    UpdateEditorActiveViewZoom:      function(updateSlider=true){
+        
+        let zoomValue = 1;
+        if ( this.activeView){
+            let viewModel =  this.views[this.activeView];
+            if (viewModel){
+                zoomValue = viewModel.Zoom || 1;
+
+                $('#vieZoomInfo').text(zoomValue);
+                if (updateSlider)
+                  document.getElementById('viewZoom').value = zoomValue;
+            }
+        }
+
+        let $activeView = undefined;
+        if (false){//(this.activeViewDiv.indexOf('g0')==0){
+            $activeView = $('.vis-edit-group-widget');
+        }
+        else{ 
+            $activeView = $('#visview_'+ this.activeViewDiv);
+        };
+
+        if ($activeView){
+            //$activeView.css({transform : 'scale('+ rangeValue +')'}); 
+            //$activeView.css({transform-origin: 'top left'}); 
+            $activeView.css({
+                    'transform-origin':         'top left',
+                    '-webkit-transform-origin': 'top left',
+                    transform : 'scale('+ zoomValue +')'
+            });
+        }
     }
 });
 
+//************************************************************************************ */
 $(document).keydown(function (e) {
     //                          Keycodes
     //
@@ -6942,6 +7033,11 @@ $(document).keydown(function (e) {
     // | c 	         67   |   numpad 6 	        102  |    single quote 	    222
     // | d 	         68   |   numpad 7 	        103  |
     // Capture ctrl-z (Windows/Linux) and cmd-z (MacOSX)
+    if (e.which === 17 && e.ctrlKey)
+    {
+        vis.ctrlKeyPressed = true;
+    };
+
     if (e.which === 90 && (e.ctrlKey || e.metaKey)) {
         vis.undo();
         e.preventDefault();
@@ -7017,8 +7113,18 @@ $(document).keydown(function (e) {
         vis.prevView();
         e.preventDefault();
     }
+    //
 });
 
+//************************************************************************************ */
+$(document).keyup(function (e) {
+    if (e.which === 17)
+    {
+        vis.ctrlKeyPressed = false;
+    }; 
+});
+
+//************************************************************************************ */
 // Copy paste mechanism
 $(window).on('paste', function (/*e*/) {
     vis.paste();
@@ -7026,8 +7132,68 @@ $(window).on('paste', function (/*e*/) {
     vis.copy(null, null, e.type === 'cut');
 });
 
+//************************************************************************************ */
+function onMouseWheel(event){
+    
+    if (event.ctrlKey){ //(vis.ctrlKeyPressed)
+            let zoomSlider = document.getElementById('viewZoom');
+            let val = Number(zoomSlider.value);
+            let step = Number(zoomSlider.step);
+            
+
+            if(event.originalEvent.wheelDelta /120 > 0) {
+                val = val + step;
+                let limit = Number(zoomSlider.max); 
+                if (val > limit)
+                    val = limit;
+            }
+            else{
+                val = val - step;
+                let limit = Number(zoomSlider.min); 
+                if (val < limit)
+                    val = limit;
+            }
+
+        zoomSlider.value = val;
+        
+        let event1 = new Event("input", { bubbles: true, cancelable: true}); 
+        zoomSlider.dispatchEvent(event1); 
+
+        event.preventDefault();
+    }
+} 
+
+
+//************************************************************************************ */
+$( document ).ready(function() {
+
+    $('#vis_container').bind('mousewheel DOMMouseScroll', onMouseWheel);
+
+    $("#viewZoom").on("input", function(e) { //change
+        let rangeValue = Number(e.target.value);
+        console.log("onViewZoomRangeChange: "+ rangeValue+'  activeView:'+vis.activeView+'  activeViewDiv:'+vis.activeViewDiv);
+         
+        if (vis.activeView){
+            let viewModel = vis.views[vis.activeView]
+            if (viewModel){
+                viewModel.Zoom = rangeValue;
+                vis.UpdateEditorActiveViewZoom(true);
+            }
+        } 
+    });
+
+    $("#viewZoom1").on("input", function(e) { //change
+        let rangeValue = Number(e.target.value);
+        console.log("onViewZoomRangeChange1: "+ rangeValue+'  activeView:'+vis.activeView+'  activeViewDiv:'+vis.activeViewDiv);
+    });
+
+});
+
+
+//************************************************************************************ */
 window.onbeforeunload = function () {
     return vis.onPageClosing();
 };
 
+//************************************************************************************ */
 
