@@ -1,9 +1,9 @@
 {
   "name": "iobroker.vis",
   "description": "Graphical user interface for ioBroker.",
-  "version": "1.4.15",
+  "version": "1.4.16",
   "author": {
-    "name": "bluefox",
+    "name": "bluefox (Agav fork)",
     "email": "dogafox@gmail.com"
   },
   "contributors": [

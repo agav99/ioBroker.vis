@@ -1,8 +1,11 @@
 {
     "common": {
         "name": "vis",
-        "version": "1.4.15",
+        "version": "1.4.16",
         "news": {
+            "1.4.16": {
+                "ru": "Клонирование представлдений\nМасштабирование страницы\nАвтопозиционирование дочерних элементов"
+	    },
             "1.4.15": {
                 "en": "Better check of the offline license",
                 "de": "Bessere Überprüfung der Offline-Lizenz",
