@@ -1818,7 +1818,11 @@ var vis = {
 
         let viewURI = widgetData.attr('contains_view'); 
 
-        if (viewURI && (viewURI.indexOf('?')<=0)){
+        //Если contains_view не содержит параметров "?xxx;xxx" и хотябы параметр "viewAttr0" контерйнера
+        //определен, то изменяем "contains_view"
+        //Проверка на viewAttr0 добавлена тк иначе все внутренние виджеты контейнеров будут иметь составное ID = WidgetID+ContainerID 
+        //а это может сломать совместимость со старыми проектами, если ID использовалось в JS скрипте кадра 
+        if (viewURI && (viewURI.indexOf('?')<=0) && widgetData["viewAttr0"]){
             viewURI=viewURI+'?'+widgetData.attr('wid')+';';
 
             let attrCount = widgetData.count;
