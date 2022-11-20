@@ -3908,6 +3908,25 @@ vis = $.extend(true, vis, {
                 return false;
             });
 
+            if (this.views[view].widgets[id].tpl=="tplContainerView") 
+            {
+                $wid.bind('dblclick', function (e) {
+                    if (that.dragging) return;
+                   
+                    if  (that.activeWidgets.length == 1){
+                       //let widgetId = $(this).attr('id');
+                       let  $container = $(this).find('.vis-view-container');
+                       let viewURI = $container.attr('data-vis-contains');
+                       let viewInfo=that.parseViewURI(viewURI);
+                      
+                       that.changeView(viewInfo.viewModelId, viewInfo.viewModelId, undefined, undefined, true, function (_viewDiv, _view) {
+                        // deselect all
+                        that.inspectWidgets(_viewDiv, _view, []);
+                    });
+                    }
+                });
+            };
+
             if (id[0] === 'g') {
                 $wid.bind('dblclick', function (e) {
                     if (that.dragging) return;
@@ -3920,6 +3939,7 @@ vis = $.extend(true, vis, {
                     });
                 });
             }
+
         } else {
             $wid.addClass('vis-widget-edit-locked').removeClass('ui-selectee').unbind('click');
         }

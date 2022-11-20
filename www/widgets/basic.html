@@ -1193,22 +1193,7 @@
                 }, refreshInterval);
             }
         },
-	getViewUri: function (widgetData){
 
-           let viewURI = widgetData.attr('contains_view'); 
-
-            if (viewURI && (viewURI.indexOf('?')<=0)){
-                viewURI=viewURI+'?'+widgetData.attr('wid')+';';
-
-                let attrCount = widgetData.count;
-                for (let i = 1; i <= attrCount; i++) {
-                    viewURI = viewURI + widgetData["viewAttr"+i];
-                    if (i < attrCount) viewURI = viewURI + ';';
-                }
-            }    
-            
-            return viewURI;
-        },
         imgRefresh: function (el, src, refreshInterval, refreshOnWakeUp, refreshOnViewChange, refreshWithNoQuery) {
             var widgetView;
             if (src && typeof src === 'object') {
@@ -2505,13 +2490,13 @@
         data-vis-type="container"
         data-vis-name="view in widget"
         data-vis-attrs="contains_view/views"
-	data-vis-attrs0="group.effects;autopos/checkbox;count[1]/number,0,10;viewAttr(1-count)/id"
+	data-vis-attrs0="autopos/checkbox;count[1]/number,0,10;viewAttr(1-count)/id"
         >
     <div class="vis-widget <%== this.data.attr('class') %>" style="width:400px; height: 270px;" id="<%= this.data.attr('wid') %>">
         <% if (vis.editMode) { %>
             <div class="editmode-helper"></div>
         <% } %>
-        <div data-vis-contains="<%= vis.binds.basic.getViewUri(this.data) %>" class="vis-widget-body vis-view-container">
+        <div data-vis-contains="<%= vis.getViewURI(this.data)%>" class="vis-widget-body vis-view-container">
         </div>
     </div>
 </script>

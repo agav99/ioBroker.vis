@@ -959,6 +959,7 @@ var vis = {
     // view in container: viewDiv=PageC, view=PageC?Param1, hidden=true, callback=xxx
     //    inside function:  view=PageC  viewDiv=PageC_Param1
     // 
+    // viewDiv - used for new elementID
     // parentContainerWidgetId -  container widget element ID
     /**********************************************************************/
     renderView:         function (viewDiv, view, hidden, callback, parentContainerWidgetId=undefined) {
@@ -1834,6 +1835,22 @@ var vis = {
         return false;
     },
 
+/***********************************************************************************/
+    getViewURI: function(widgetData){
+
+        let viewURI = widgetData.attr('contains_view'); 
+
+        if (viewURI && (viewURI.indexOf('?')<=0)){
+            viewURI=viewURI+'?'+widgetData.attr('wid')+';';
+
+            let attrCount = widgetData.count;
+            for (let i = 1; i <= attrCount; i++) {
+                viewURI = viewURI + widgetData["viewAttr"+i];
+                if (i < attrCount) viewURI = viewURI + ';';
+            }
+        }    
+        return viewURI;
+    },
     /***********************************************************************************/
     // viewDiv - ID of view Instance. can contain ExName (for View Clones)
     // view - view (str)  or viewInfo (obj) or ViewURI(str)
@@ -1915,17 +1932,16 @@ var vis = {
                 
             //auto position widget in parent container
             if (containerModel && containerModel.data.autopos){
-                let dX = Math.floor(Number(widget.style.left.slice(0,-2))/10);
-                let dY = Math.floor(Number(widget.style.top.slice(0,-2))/10);
+                let dX = Math.floor(Number(widget.style.left.slice(0,-2))/40);
+                let dY = Math.floor(Number(widget.style.top.slice(0,-2))/40);
 
-                widget.style["z-index"] = (dY*1000 + dX); 
+                widget.style["z-index"] = (dY*50 + dX); 
                 widget.style.left = 0;
                 widget.style.top = 0;
                 widget.style.height = '100%';
                 widget.style.width = '100%';
             }
         }
-
 
         var isRelative = widget && widget.style && 
                         (widget.style.position === 'relative' || widget.style.position === 'static' || widget.style.position === 'sticky');
