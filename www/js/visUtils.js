@@ -15,6 +15,34 @@
  */
 
 /************************************************************** */
+//Parse viewURI  format: viewModelId?Param1;Param2;...   оr only:  viewModelId
+function parseViewURI (viewURI){
+  let resViewName=viewURI;
+  let resViewParams=[];     
+  let resExName='';
+  
+  if (viewURI && (viewURI.indexOf('?')>0))
+   { let viewQ=viewURI.split('?');
+     resViewName=viewQ[0];
+     resViewParams=viewQ[1].split(';')
+     
+     if (resViewParams?.length>0)
+         resExName = resViewParams[0];
+
+     resExName = resExName.replace("?","_").replace(/\./g,"").replace(/;/g,"").replace(/javascript/g,"js");
+     if (resExName.length>0) resExName='_'+resExName;
+   }
+                                             //Example for: "PageA?Param1;Param2;"
+  return {viewModelId: resViewName,          //= "PageA"
+          params  : resViewParams,           //array = [Param1;Param2]
+          exName  : resExName,               //used to create unique DivID for Clons of View  = "_Param1"  (not contain forbidden chars)
+          viewURI : viewURI,                 //= "PageA?Param1;Param2;"
+          isClone : resExName.length>0,      //= true if URI has extra params
+          viewID  : resViewName + resExName  //= "PageA_Param1Param2"
+         }
+ }
+
+/************************************************************** */
 function replaceGroupAttr(inputStr, groupAttrList) {
     var newString = inputStr;
     var match = false;
@@ -722,11 +750,14 @@ function getUsedObjectIDs(views, isByViews) {
 
                     // Add all OIDs from this view to parent
                     if (widgetModel.tpl === 'tplContainerView' && widgetModel.data.contains_view) {     //ПРОВЕРИТЬ ЧТО ЭТО  <<<<<<<<<<<<<<<<<
-                        var ids = _views[widgetModel.data.contains_view];
+
+                        let viewInfo=parseViewURI(widgetModel.data.contains_view);
+                        var ids = _views[viewInfo.viewModelId];
                         if (ids) {
                             for (var a = 0; a < ids.length; a++) {
-                                if (ids[a] && _views[view].indexOf(ids[a]) === -1) {
-                                    _views[view].push(ids[a]);
+                                let varId =  ids[a];
+                                if (varId &&  (varId.indexOf("viewAttr") < 0) &&(_views[view].indexOf(varId) === -1)) {
+                                    _views[view].push(varId);
                                     changed = true;
                                 }
                             }
