@@ -3138,17 +3138,22 @@ parentContainerWidgetId: parentContainerWidgetId, //
                 if (callback){
                     //Пробуем оптимизировать  не всегда выполнять rerenderWidget 
                     var $widget = $('#' + bindItem.widget);
-                    if ($widget) 
-                       { 
-                        if (bindItem.attr=="background-color") $widget.css("background-color",value);
-                        else
-                        if (bindItem.attr=="html") $widget.html(value);
-                        //font-weight/height/left/top/width/
+                    let done=false;
 
-                        else callback(bindItem.view, bindItem.widget); 
-                      }
-                    else {
-                        callback(bindItem.view, bindItem.widget); 
+                    if ($widget){ 
+                        if (bindItem.attr=="background-color"){ 
+                             $widget.css("background-color",value);
+                              done=true;
+                            }
+                        else
+                        if (bindItem.attr=="html"){
+                            $widget.find('.vis-widget-body').html(value);
+                            done=true;
+                        }
+                        else; //font-weight/height/left/top/width/
+                    }
+                    if (!done){
+                        callback(bindItem.view, bindItem.widget);  
                     }
                 }
             }

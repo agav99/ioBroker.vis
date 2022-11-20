@@ -6822,7 +6822,7 @@ vis = $.extend(true, vis, {
         let viewModel = vis.views[view]
         let viewZoom = 1;
         if (viewModel){
-            viewZoom = viewModel.Zoom;
+            viewZoom = viewModel.Zoom || 1;
         }
 
 
