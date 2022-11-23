@@ -2969,6 +2969,58 @@ parentContainerWidgetId: parentContainerWidgetId, //
                                 value = parseFloat(value) % oids[t].operations[k].arg;
                             }
                             break;
+                        case '=':
+                        case '!=':
+                        case '>':
+                        case '>=':
+                        case '<':
+                        case '<=':
+                        case 'bit':                            
+                            if (oids[t].operations[k].arg !== undefined && oids[t].operations[k].arg !== null) {
+                                
+                                let operand = 0;
+                                let argIsArray = Array.isArray(oids[t].operations[k].arg);
+
+                                if (argIsArray)
+                                    operand = oids[t].operations[k].arg[0];
+                                else
+                                    operand = oids[t].operations[k].arg;
+                                
+
+                                let _boolResult = false;
+
+                                switch (oids[t].operations[k].op){
+                                    case '=':   _boolResult = parseFloat(value) == operand; break;
+                                    case '!=':  _boolResult = parseFloat(value) != operand; break;
+                                    case '>':   _boolResult = parseFloat(value) > operand; break;
+                                    case '>=':  _boolResult = parseFloat(value) >= operand; break;
+                                    case '<':   _boolResult = parseFloat(value) < operand; break;
+                                    case '<=':  _boolResult = parseFloat(value) <= operand; break;
+                                    case 'bit':
+                                                let  bitNum = Math.round(operand);
+                                                value = Math.round(value); 
+                                                if ((bitNum>=0) && (bitNum<=31)){
+                                                    _boolResult = value & (1<< bitNum);
+                                                }
+                                                break;       
+                                }
+
+                                if (argIsArray){
+
+                                    value = "";
+                                    if (_boolResult &&   (oids[t].operations[k].arg.length >= 2))  
+                                    value = oids[t].operations[k].arg[1];
+                                    else  
+                                    if (!_boolResult &&   (oids[t].operations[k].arg.length >= 3))  
+                                    value = oids[t].operations[k].arg[2];
+                                }
+                                else 
+                                {
+                                    value = _boolResult? 1: 0;
+                                }
+                            }
+                            break;
+
                         case 'round':
                             if (oids[t].operations[k].arg === undefined && oids[t].operations[k].arg !== null) {
                                 value = Math.round(parseFloat(value));
@@ -3102,7 +3154,11 @@ parentContainerWidgetId: parentContainerWidgetId, //
 
             if (widgetModel)
             {
+                let prevValue = widgetModel[bindItem.type][bindItem.attr];
                 var value = that.formatBinding(bindItem.format, bindItem.view, bindItem.widget, widgetModel);
+                if (prevValue == value)
+                 return;
+
                 widgetModel[bindItem.type][bindItem.attr] = value;
                 
                 //update for....    
@@ -3132,7 +3188,13 @@ parentContainerWidgetId: parentContainerWidgetId, //
                             $widget.find('.vis-widget-body').html(value);
                             done=true;
                         }
-                        else; //font-weight/height/left/top/width/
+                        else
+                        if (bindItem.attr=="class"){
+                            if (prevValue.length>0) $widget.removeClass(prevValue); 
+                            if (value.length>0)     $widget.addClass(value);
+                            done=true;
+                        }
+                        ; //font-weight/height/left/top/width/
                     }
                     if (!done){
                         callback(bindItem.view, bindItem.widget);  

@@ -109,6 +109,8 @@ function getObjPropValue(obj, PropPath){
     return obj;
  }
 
+
+
 //Format: {objectID1;operation1;operation2;...} ..{ }.. { }
 //examples:
 //  {objectRed.lc; date(hh:mm)} .. {h:height; w:width; Math.max(20, Math.sqrt(h*h + w*w))} ...
@@ -135,10 +137,12 @@ function extractBinding(format) {
             console.warn('Too many bindings in one widget: ' + oid.length + '[max = 50]');
         }
         for (var p = 0; p < oid.length && p < 50; p++) {
+            //Parsing one binding instruction {__;__;__;__;__}
             var _oid = oid[p].substring(1, oid[p].length - 1);
             if (_oid[0] === '{') continue;
             // If first symbol '"' => it is JSON
             if (_oid && _oid[0] === '"') continue;
+
             var parts = _oid.split(';');
             result = result || [];
             var systemOid = parts[0].trim();
@@ -162,7 +166,9 @@ function extractBinding(format) {
                 systemOid = systemOid.substring(0, systemOid.length - 3);
             }
             var operations = null;
-            var isEval = visOid.match(/^[\d\w_]+:\s?[-\d\w_.]+/) || (!visOid.length && parts.length > 0);//(visOid.indexOf(':') !== -1) && (visOid.indexOf('::') === -1);
+
+            //check for: {h:height;w:width;Math.max(20, Math.sqrt(h*h + w*w))}
+            var isEval = visOid.match(/^[\d\w_]+:\s?[-\d\w_.]+/) || (!visOid.length && parts.length > 0); //(visOid.indexOf(':') !== -1) && (visOid.indexOf('::') === -1);
 
             if (isEval) {
                 var xx = visOid.split(':', 2);
@@ -221,9 +227,32 @@ function extractBinding(format) {
                         }
                     }
                 } else {
-                    var parse = parts[u].match(/([\w\s\/+*-]+)(\(.+\))?/);  //Examples:  *(256); HEX2; date(hh:mm); array(value1,value2) 
+
+                    function checkValueNumber(value){
+                        if (value === undefined) {
+                            return null
+                        } 
+                        else {
+                            value = (value || '').trim().replace(',', '.');
+                            
+                            if (value.indexOf('(')==0)  
+                                value = value.substring(1, value.length - 1);
+
+                            value = parseFloat(value.trim());
+
+                            if (value.toString() === 'NaN') {
+                                return null;
+                            } else {
+                                return value;
+                            }
+                        }
+                    }
+
+
+                    var parse = parts[u].match(/([\w\s\/+*-=<>!]+)(\(.+\))?/);  //Examples:  *(256); HEX2; date(hh:mm); array(value1,value2) 
                     if (parse && parse[1]) {
                         parse[1] = parse[1].trim();
+                       
                         // operators requires parameter
                         if (parse[1] === '*' ||
                             parse[1] === '+' ||
@@ -231,23 +260,18 @@ function extractBinding(format) {
                             parse[1] === '/' ||
                             parse[1] === '%' ||
                             parse[1] === 'min' ||
-                            parse[1] === 'max') {
-                            if (parse[2] === undefined) {
-                                console.log('Invalid format of format string: ' + format);
-                                parse[2] = null;
-                            } else {
-                                parse[2] = (parse[2] || '').trim().replace(',', '.');
-                                parse[2] = parse[2].substring(1, parse[2].length - 1);
-                                parse[2] = parseFloat(parse[2].trim());
+                            parse[1] === 'max' 
+                            ) {
+                                parse[2] = checkValueNumber(parse[2]); 
 
-                                if (parse[2].toString() === 'NaN') {
+                                if (parse[2] === null) {
                                     console.log('Invalid format of format string: ' + format);
-                                    parse[2] = null;
-                                } else {
-                                    operations = operations || [];
-                                    operations.push({op: parse[1], arg: parse[2]});
-                                }
-                            }
+                                } 
+                                else {
+                                        operations = operations || [];
+                                        operations.push({op: parse[1], arg: parse[2]});
+                                    }
+                            
                         } else
                         // date formatting
                         if (parse[1] === 'date' || parse[1] === 'momentDate' ) {
@@ -266,6 +290,41 @@ function extractBinding(format) {
                                 operations.push ({op: parse[1], arg: param}); //xxx
                             }
                         } else
+                        if (parse[1] === '=' ||
+                            parse[1] === '!=' ||
+                            parse[1] === '>' ||
+                            parse[1] === '<' ||
+                            parse[1] === '>=' ||
+                            parse[1] === '<=' ||
+                            parse[1] === 'bit' 
+                            ){
+                                param = (parse[2] || '').trim();
+                                param = param.substring(1, param.length - 1);
+                                param = param.split(',');
+                                if (Array.isArray(param) && param.length >= 2) {
+                                
+                                    param[0] = checkValueNumber(param[0]);
+
+                                    if (param[0] === null) {
+                                        console.log('Invalid format of format string: ' + format);
+                                    } else {
+                                        operations = operations || [];
+                                        operations.push({op: parse[1], arg: param});
+                                    }
+                                }
+                                else {
+                                    parse[2] = checkValueNumber(parse[2]); 
+
+                                    if (parse[2] === null) {
+                                        console.log('Invalid format of format string: ' + format);
+                                    } 
+                                    else {
+                                            operations = operations || [];
+                                            operations.push({op: parse[1], arg: parse[2]});
+                                        }
+                                }
+                        }
+                        else 
                         // value formatting
                         if (parse[1] === 'value') {
                             operations = operations || [];
