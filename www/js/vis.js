@@ -1314,7 +1314,7 @@ var vis = {
 
         if (this.widgets[widgetId]){                         
               groupId = this.widgets[widgetId].groupid || null;
-              modelWid = this.widgets[widgetId].modelwid || widgetId; //get widget modelId
+              modelWid = this.widgets[widgetId].wid || widgetId; //get widget modelId
               parentContainerWidgetId = this.widgets[widgetId].parentContainerWidgetId;
         }
         else 
@@ -1818,11 +1818,11 @@ var vis = {
 
         let viewURI = widgetData.attr('contains_view'); 
 
-        //Если contains_view не содержит параметров "?xxx;xxx" и хотябы параметр "viewAttr0" контерйнера
+        //Если contains_view не содержит параметров "?xxx;xxx" и хотябы параметр "viewAttr1" контерйнера
         //определен, то изменяем "contains_view"
         //Проверка на viewAttr0 добавлена тк иначе все внутренние виджеты контейнеров будут иметь составное ID = WidgetID+ContainerID 
         //а это может сломать совместимость со старыми проектами, если ID использовалось в JS скрипте кадра 
-        if (viewURI && (viewURI.indexOf('?')<=0) && widgetData["viewAttr0"]){
+        if (viewURI && (viewURI.indexOf('?')<=0) && widgetData["viewAttr1"]){
             viewURI=viewURI+'?'+widgetData.attr('wid')+';';
 
             let attrCount = widgetData.count;
@@ -1909,7 +1909,7 @@ var vis = {
 
             let parentContainerInstInfo = this.widgets[parentContainerWidgetId];
             if (parentContainerInstInfo){
-                containerModel = this.views[parentContainerInstInfo.modelViewId].widgets[parentContainerInstInfo.modelwid];
+                containerModel = this.views[parentContainerInstInfo.modelViewId].widgets[parentContainerInstInfo.divwid];
             }
                 
             //auto position widget in parent container
@@ -1972,14 +1972,14 @@ var vis = {
             }
 
             this.widgets[id] = {
-                    wid: id,               //here id is unique wid (can contain ExName for CloneView)  w0000001_clone1
-               modelwid: modelwid,         //w0000001 
+                    wid: modelwid,       //model widgetID (w0000001)
+                 divwid: id,             //here id is unique wid (can contain ExName for CloneView)  w0000001_clone1
             modelViewId: view,  
                 isClone: viewInfo.isClone, 
                 groupid: groupId,
 parentContainerWidgetId: parentContainerWidgetId, //               
        widgetModelClone: widgetModelforClone, //save model only for clones. For non Clones using this.views[xx].widgets[xx] (memory optimizatin) 
-                   data: new can.Map($.extend({wid: id}, widget.data))
+                   data: new can.Map($.extend({wid: id, modelwid: modelwid}, widget.data))
             };
 
         } catch (e) {
@@ -3774,7 +3774,10 @@ parentContainerWidgetId: parentContainerWidgetId, //
                 var obj = data[id];
 
                 {//updating state region 
-                if (id.indexOf('local_') === 0) {
+                if ((id.indexOf('local_') === 0) && 
+                    ((this.states[id+'.val'] == 'null') || (this.states[id+'.val'] == null)) //Value can be already set by "user" js script 
+                )
+                {
                     // if it is a local variable, we have to initiate this
                     obj = {
                         val: this.getUrlParameter(id),              // using url parameter to set initial value of local variable
