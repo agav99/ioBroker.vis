@@ -1920,8 +1920,8 @@ var vis = {
                 widget.style["z-index"] = (dY*50 + dX); 
                 widget.style.left = 0;
                 widget.style.top = 0;
-                widget.style.height = '100%';
-                widget.style.width = '100%';
+                widget.style.height = containerModel.style.height; //='100%'
+                widget.style.width =  containerModel.style.width;  //='100%'
             }
         }
 
