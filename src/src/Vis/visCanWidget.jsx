@@ -43,8 +43,8 @@ class VisCanWidget extends VisBaseWidget {
         this.props.linkContext.registerChangeHandler(this.props.id, this.changeHandler);
 
         // legacy support
-        let widget = this.props.views[this.props.view].widgets[this.props.id];
-        if (widget.tpl.includes('materialdesign')) {
+        const widget = this.props.views[this.props.view].widgets[this.props.id];
+        if (widget?.tpl?.includes('materialdesign')) {
             this.props.buildLegacyStructures();
         }
     }
@@ -896,6 +896,7 @@ class VisCanWidget extends VisBaseWidget {
             }
 
             this.applyBindings(true, widgetData, widgetStyle);
+
             if (widgetData.filterkey && typeof widgetData.filterkey === 'string') {
                 widgetData.filterkey = widgetData.filterkey.split(',')
                     .map(f => f.trim())
@@ -972,7 +973,7 @@ class VisCanWidget extends VisBaseWidget {
 
         // try to apply bindings to every attribute
         this.props.allWidgets[wid] = {
-            style: widgetStyle,
+            style: new this.props.can.Map(widgetStyle),
             data: new this.props.can.Map(widgetData),
         };
 
@@ -997,7 +998,7 @@ class VisCanWidget extends VisBaseWidget {
                         data: this.props.allWidgets[wid].data,
                         viewDiv: this.props.view,
                         view: this.props.view,
-                        style: widgetStyle,
+                        style: this.props.allWidgets[wid].style,
                     };
 
                     if (widgetData?.oid) {
@@ -1039,15 +1040,15 @@ class VisCanWidget extends VisBaseWidget {
             this.widDiv = parentDiv.querySelector(`#${wid}`);
 
             if (this.widDiv) {
-                if (widgetStyle && !widgetData._no_style) {
+                if (this.props.allWidgets[wid].style && !widgetData._no_style) {
                     // fix position
-                    VisCanWidget.applyStyle(this.widDiv, widgetStyle);
+                    VisCanWidget.applyStyle(this.widDiv, this.props.allWidgets[wid].style);
                 }
 
-                this.widDiv.style.position = isRelative ? (widgetStyle.position || 'relative') : 'absolute';
+                this.widDiv.style.position = isRelative ? (this.props.allWidgets[wid].style.position || 'relative') : 'absolute';
 
                 // by default, it is border-box
-                if (!widgetStyle['box-sizing']) {
+                if (!this.props.allWidgets[wid].style['box-sizing']) {
                     this.widDiv.style.boxSizing = 'border-box';
                 }
 
@@ -1191,41 +1192,39 @@ class VisCanWidget extends VisBaseWidget {
             }
 
             return <VisView
-                ref={this.refViews[view]}
-                key={view}
-                view={view}
+                $$={this.props.$$}
                 activeView={view}
-                views={this.props.views}
+                adapterName={this.props.adapterName}
+                allWidgets={this.props.allWidgets}
+                buildLegacyStructures={this.props.buildLegacyStructures}
                 can={this.props.can}
                 canStates={this.props.canStates}
+                container={this.props.container}
+                customSettings={this.props.customSettings}
+                dateFormat={this.props.dateFormat}
+                editMode={false}
+                formatUtils={this.props.formatUtils}
+                instance={this.props.instance}
+                jQuery={this.props.jQuery}
+                key={view}
+                lang={this.props.lang}
+                linkContext={this.props.linkContext}
+                projectName={this.props.projectName}
+                ref={this.refViews[view]}
+                registerRef={this.props.registerRef}
+                runtime={this.props.runtime}
+                setValue={this.props.setValue}
+                showWidgetNames={this.props.showWidgetNames}
+                socket={this.props.socket}
+                systemConfig={this.props.systemConfig}
+                theme={this.props.theme}
+                themeName={this.props.themeName}
+                themeType={this.props.themeType}
                 user={this.props.user}
                 userGroups={this.props.userGroups}
-                allWidgets={this.props.allWidgets}
-                jQuery={this.props.jQuery}
-                $$={this.props.$$}
-                registerRef={this.props.registerRef}
-                adapterName={this.props.adapterName}
-                instance={this.props.instance}
-                projectName={this.props.projectName}
-                socket={this.props.socket}
+                view={view}
+                views={this.props.views}
                 viewsActiveFilter={this.props.viewsActiveFilter}
-                setValue={this.props.setValue}
-                linkContext={this.props.linkContext}
-                formatUtils={this.props.formatUtils}
-                selectedWidgets={this.props.runtime ? null : this.props.selectedWidgets}
-                setSelectedWidgets={this.props.runtime ? null : this.props.setSelectedWidgets}
-                onWidgetsChanged={this.props.runtime ? null : this.props.onWidgetsChanged}
-                showWidgetNames={this.props.showWidgetNames}
-                dateFormat={this.props.dateFormat}
-                lang={this.props.lang}
-                themeType={this.props.themeType}
-                themeName={this.props.themeName}
-                theme={this.props.theme}
-                systemConfig={this.props.systemConfig}
-                container={this.props.container}
-                editMode={false}
-                runtime={this.props.runtime}
-                buildLegacyStructures={this.props.buildLegacyStructures}
                 visInWidget
             />;
         }) : null;

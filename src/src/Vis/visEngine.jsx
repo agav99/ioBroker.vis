@@ -20,12 +20,13 @@ import {
     Button, Dialog, DialogContent, DialogTitle, DialogActions,
 } from '@mui/material';
 
-import I18n from '@iobroker/adapter-react-v5/i18n';
+import { I18n } from '@iobroker/adapter-react-v5';
 import CloseIcon from '@mui/icons-material/Close';
 import CheckIcon from '@mui/icons-material/Check';
 import AlertIcon from '@mui/icons-material/Warning';
 
 import './css/vis.css';
+import './css/backgrounds.css';
 // import './lib/can.custom.js';
 // import $$ from './lib/quo.standalone'; // Gestures library
 import './visWords';
@@ -281,9 +282,7 @@ class VisEngine extends React.Component {
     buildLegacyStructures = () => {
         this.buildLegacySubscribing();
         if (this.vis.binds.materialdesign?.helper?.subscribeStatesAtRuntime && !this.vis.binds.materialdesign.helper.subscribeStatesAtRuntime.__inited) {
-            this.vis.binds.materialdesign.helper.subscribeStatesAtRuntime = function (wid, widgetName, callback, debug) {
-
-            };
+            this.vis.binds.materialdesign.helper.subscribeStatesAtRuntime = (/* wid, widgetName, callback, debug */) => {};
             this.vis.binds.materialdesign.helper.subscribeStatesAtRuntime.__inited = true;
         }
     };
@@ -567,7 +566,7 @@ class VisEngine extends React.Component {
                 this.props.onConfirmDialog(message, title, icon, width, callback),
             config: {}, // storage of dialog positions and size (Deprecated)
             showCode: (code, title, mode) => this.props.onShowCode(code, title, mode),
-            findCommonAttributes: (view, widgets) => {
+            findCommonAttributes: (/* view, widgets */) => {
 
             },
         };
@@ -737,43 +736,32 @@ class VisEngine extends React.Component {
                     .then(() => this.props.socket.getEnums(!useCache))
                     .then(enums => {
                         Object.assign(objects, enums);
-                        return new Promise((resolve, reject) => {
-                            this.props.socket.getRawSocket().emit(
-                                'getObjectView',
-                                'system',
-                                'instance',
-                                {
-                                    startkey: 'system.adapter.',
-                                    endkey: 'system.adapter.\u9999',
-                                },
-                                (err, res) => {
-                                    if (err) {
-                                        reject(err);
-                                    } else {
-                                        for (let i = 0; i < res.rows.length; i++) {
-                                            objects[res.rows[i].id] = res.rows[i].value;
-                                        }
+                        return this.props.socket.getObjectViewSystem(
+                            'instance',
+                            'system.adapter.',
+                            'system.adapter.\u9999',
+                        )
+                            .then(rows => {
+                                for (let i = 0; i < rows.length; i++) {
+                                    objects[rows[i]._id] = rows[i];
+                                }
 
-                                        const instance = `system.adapter.${this.props.adapterName}.${this.props.instance}`;
-                                        // find out default file mode
-                                        if (objects[instance]?.native?.defaultFileMode) {
-                                            this.defaultMode = objects[instance].native.defaultFileMode;
-                                        }
-                                        resolve();
-                                    }
-                                },
-                            );
-                        });
+                                const instance = `system.adapter.${this.props.adapterName}.${this.props.instance}`;
+                                // find out default file mode
+                                if (objects[instance]?.native?.defaultFileMode) {
+                                    this.defaultMode = objects[instance].native.defaultFileMode;
+                                }
+                            });
                     })
-                    .then(() => this.props.socket.getObjectView('', '\u9999', 'chart')
+                    .then(() => this.props.socket.getObjectViewSystem('chart', '', '\u9999')
                         .catch(() => null))
                     .then(charts => {
                         charts && Object.assign(objects, charts);
-                        return this.props.socket.getObjectView('', '\u9999', 'channel');
+                        return this.props.socket.getObjectViewSystem('channel', '', '\u9999');
                     })
                     .then(channels => {
                         Object.assign(objects, channels);
-                        return this.props.socket.getObjectView('', '\u9999', 'device');
+                        return this.props.socket.getObjectViewSystem('device', '', '\u9999');
                     })
                     .then(devices => {
                         Object.assign(objects, devices);
@@ -835,7 +823,7 @@ class VisEngine extends React.Component {
                 }
 
                 return this.props.socket.readFile(adapter, filename)
-                    .then(data => setTimeout(() => cb(null, data.data, filename, data.type), 0))
+                    .then(data => setTimeout(() => cb(null, data.file, filename, data.mimeType), 0))
                     .catch(error => cb(error));
             },
             getHistory: (id, options, cb) => {
@@ -1080,11 +1068,11 @@ class VisEngine extends React.Component {
             this.statesDebounce[id] = {
                 timeout: setTimeout(() => {
                     if (this.statesDebounce[id]) {
-                        if (this.statesDebounce[id].state) {
+                        if (this.statesDebounce[id].state !== null && this.statesDebounce[id].state !== undefined) {
                             this._setValue(id, this.statesDebounce[id].state);
-                        } else {
-                            delete this.statesDebounce[id];
                         }
+
+                        delete this.statesDebounce[id];
                     }
                 }, this.statesDebounceTime, id),
                 state: null,
@@ -1112,33 +1100,64 @@ class VisEngine extends React.Component {
     }
     */
 
+    static async loadScriptsOfOneWidgetSet(widgetSet) {
+        for (let i = 0; i < widgetSet.length; i++) {
+            const { oldScript, newScript } = widgetSet[i];
+            newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+            oldScript.parentNode.replaceChild(newScript, oldScript);
+
+            await new Promise(resolve => {
+                newScript.onload = resolve;
+            });
+        }
+    }
+
+    static loadedSources = [];
+
     static async setInnerHTML(elm, html) {
         elm.innerHTML = html;
         // we must load script one after another, to keep the order
         const scripts = Array.from(elm.querySelectorAll('script'));
+
+        // load all scripts of one widget set sequentially and all groups of scripts in parallel
+        const groups = {};
+
         for (let s = 0; s < scripts.length; s++) {
             const oldScript = scripts[s];
+            const src = oldScript.getAttribute('src');
+            if (src && VisEngine.loadedSources.includes(src)) {
+                continue;
+            }
+            VisEngine.loadedSources.push(src);
             const newScript = document.createElement('script');
-            let onLoad = false;
+
+            let widgetSet = 'default';
+
             Array.from(oldScript.attributes)
                 .forEach(attr => {
                     try {
-                        newScript.setAttribute(attr.name, attr.value);
-                        if (attr.name === 'src') {
-                            onLoad = true;
+                        if (attr.name === 'data-widgetset') {
+                            widgetSet = attr.value;
+                        } else {
+                            newScript.setAttribute(attr.name, attr.value);
                         }
                     } catch (error) {
                         console.error(`WTF?? in ${attr.ownerElement.id}: ${error}`);
                     }
                 });
 
-            newScript.appendChild(document.createTextNode(oldScript.innerHTML));
-            oldScript.parentNode.replaceChild(newScript, oldScript);
-
-            if (onLoad) {
-                await new Promise(resolve => (newScript.onload = resolve));
+            if (src) {
+                groups[widgetSet] = groups[widgetSet] || [];
+                groups[widgetSet].push({ newScript, oldScript });
+            } else {
+                newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+                oldScript.parentNode.replaceChild(newScript, oldScript);
             }
         }
+
+        await Promise.all(Object.keys(groups)
+            .map(widgetSet =>
+                VisEngine.loadScriptsOfOneWidgetSet(groups[widgetSet])));
     }
 
     loadEditWords() {
@@ -1532,8 +1551,8 @@ ${this.scripts}
             } else {
                 this.props.socket.readFile(this.props.adapterName, 'css/vis-common-user.css')
                     .then(file => {
-                        if (file.type) {
-                            file = file.data;
+                        if (file.mimeType) {
+                            file = file.file;
                         }
                         this.visCommonCssLoaded = file || true;
                         VisEngine.applyUserStyles('vis_common_user', file || '');
@@ -1551,8 +1570,8 @@ ${this.scripts}
             } else {
                 this.props.socket.readFile(`${this.props.adapterName}.${this.props.instance}`, `${this.props.projectName}/vis-user.css`)
                     .then(file => {
-                        if (file.type) {
-                            file = file.data;
+                        if (file.mimeType) {
+                            file = file.file;
                         }
                         this.visUserCssLoaded = file || true;
                         VisEngine.applyUserStyles('vis_user', file || '');
@@ -1578,49 +1597,49 @@ ${this.scripts}
             if (view !== '___settings' && (view === this.props.activeView || this.props.views[view].settings?.alwaysRender)) {
                 // return <div id="vis_container" ref={this.divRef} style={{ width: '100%', height: '100%' }} />;
                 return <VisView
-                    key={view}
-                    view={view}
+                    $$={window.$$}
                     activeView={this.props.activeView}
-                    views={this.props.views}
-                    editMode={this.props.editMode}
-                    editModeComponentClass={this.props.editModeComponentClass}
+                    adapterName={this.props.adapterName}
+                    allWidgets={this.allWidgets}
+                    buildLegacyStructures={this.buildLegacyStructures}
                     can={this.can}
                     canStates={this.canStates}
-                    user={this.user}
                     dateFormat={this.vis.dateFormat}
-                    userGroups={this.userGroups}
-                    allWidgets={this.allWidgets}
-                    jQuery={window.jQuery}
-                    lang={this.props.lang}
-                    $$={window.$$}
-                    adapterName={this.props.adapterName}
-                    instance={this.props.instance}
-                    projectName={this.props.projectName}
-                    socket={this.props.socket}
-                    viewsActiveFilter={this.viewsActiveFilter}
-                    setValue={this.setValue}
-                    linkContext={this.linkContext}
-                    formatUtils={this.formatUtils}
-                    widgetHint={this.props.widgetHint}
-                    selectedWidgets={this.props.runtime ? null : this.props.selectedWidgets}
-                    setSelectedWidgets={this.props.runtime ? null : this.props.setSelectedWidgets}
-                    onWidgetsChanged={this.props.runtime ? null : this.props.onWidgetsChanged}
-                    buildLegacyStructures={this.buildLegacyStructures}
-                    selectedGroup={this.props.selectedGroup}
-                    setSelectedGroup={this.props.setSelectedGroup}
-                    timeInterval={this.state.timeInterval}
-                    setTimeInterval={this.setTimeInterval}
-                    timeStart={this.state.timeStart}
-                    setTimeStart={this.setTimeStart}
-                    showWidgetNames={this.props.showWidgetNames}
-                    lockDragging={this.props.lockDragging}
                     disableInteraction={this.props.disableInteraction}
-                    registerEditorCallback={this.props.runtime ? null : this.props.registerEditorCallback}
-                    systemConfig={this.systemConfig}
-                    themeType={this.props.themeType}
-                    themeName={this.props.themeName}
-                    theme={this.props.theme}
+                    editMode={this.props.editMode}
+                    editModeComponentClass={this.props.editModeComponentClass}
+                    formatUtils={this.formatUtils}
+                    instance={this.props.instance}
+                    jQuery={window.jQuery}
+                    key={view}
+                    lang={this.props.lang}
+                    linkContext={this.linkContext}
+                    lockDragging={this.props.lockDragging}
+                    onWidgetsChanged={this.props.runtime ? null : this.props.onWidgetsChanged}
                     project={this.props.project}
+                    projectName={this.props.projectName}
+                    registerEditorCallback={this.props.runtime ? null : this.props.registerEditorCallback}
+                    selectedGroup={this.props.selectedGroup}
+                    selectedWidgets={this.props.runtime ? null : this.props.selectedWidgets}
+                    setSelectedGroup={this.props.setSelectedGroup}
+                    setSelectedWidgets={this.props.runtime ? null : this.props.setSelectedWidgets}
+                    setTimeInterval={this.setTimeInterval}
+                    setTimeStart={this.setTimeStart}
+                    setValue={this.setValue}
+                    showWidgetNames={this.props.showWidgetNames}
+                    socket={this.props.socket}
+                    systemConfig={this.systemConfig}
+                    theme={this.props.theme}
+                    themeName={this.props.themeName}
+                    themeType={this.props.themeType}
+                    timeInterval={this.state.timeInterval}
+                    timeStart={this.state.timeStart}
+                    user={this.user}
+                    userGroups={this.userGroups}
+                    view={view}
+                    views={this.props.views}
+                    viewsActiveFilter={this.viewsActiveFilter}
+                    widgetHint={this.props.widgetHint}
                 />;
             }
 

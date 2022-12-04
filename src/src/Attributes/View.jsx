@@ -1,5 +1,10 @@
 import PropTypes from 'prop-types';
-import { useEffect, useRef, useState } from 'react';
+import {
+    useEffect,
+    useRef,
+    useState,
+    useMemo,
+} from 'react';
 import withStyles from '@mui/styles/withStyles';
 
 import {
@@ -26,14 +31,15 @@ import ClearIcon from '@mui/icons-material/Clear';
 import InfoIcon from '@mui/icons-material/Info';
 
 import {
-    ColorPicker, Utils, I18n, IconPicker,
+    ColorPicker,
+    Utils,
+    I18n,
+    IconPicker,
+    SelectFile as SelectFileDialog,
+    Confirm as ConfirmDialog,
 } from '@iobroker/adapter-react-v5';
 
-import './backgrounds.css';
-
 import { theme, background } from './ViewData';
-import IODialog from '../Components/IODialog';
-import FileBrowser from './Widget/FileBrowser';
 
 const styles = _theme => ({
     backgroundClass: {
@@ -169,28 +175,42 @@ const checkFunction = (funcText, settings) => {
     return false;
 };
 
+function isPropertySameInAllViews(project, field, selectedView, views) {
+    const value = project[selectedView].settings[field];
+    views = views || Object.keys(project).filter(v => v !== '___settings' && v !== selectedView);
+
+    if (!views.length) {
+        return true;
+    }
+
+    for (let v = 0; v < views.length; v++) {
+        if (project[views[v]].settings[field] !== value) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 const View = props => {
     if (!props.project[props.selectedView]) {
         return null;
     }
 
-    const [userResolution, setUserResolution] = useState(false);
     const [triggerAllOpened, setTriggerAllOpened] = useState(0);
     const [triggerAllClosed, setTriggerAllClosed] = useState(0);
+    const [showAllViewDialog, setShowAllViewDialog] = useState(null);
 
     const view = props.project[props.selectedView];
 
     let resolutionSelect = `${view.settings.sizex}x${view.settings.sizey}`;
-    if (userResolution) {
-        resolutionSelect = 'user';
-    } else if (!(view.settings.sizex && view.settings.sizey)) {
+    if (view.settings.sizex === undefined && view.settings.sizey === undefined) {
         resolutionSelect = 'none';
-    } else if (!resolution.find(item => item.value === `${view.settings.sizex}x${view.settings.sizey}`)) {
+    } else if (!resolution.find(item => item.value === resolutionSelect)) {
         resolutionSelect = 'user';
-        setUserResolution(true);
     }
 
-    const fields = [
+    const fields = useMemo(() => ([
         {
             name: 'CSS Common',
             fields: [
@@ -264,16 +284,16 @@ const View = props => {
                 {
                     name: 'Use background', type: 'checkbox', field: 'useBackground', notStyle: true,
                 },
-                { name: 'background', field: 'background', hide: !view.settings.useBackground },
+                { name: 'background', field: 'background', hidden: '!data.useBackground' },
                 {
-                    name: '-color', type: 'color', field: 'background-color', hide: view.settings.useBackground,
+                    name: '-color', type: 'color', field: 'background-color', hidden: 'data.useBackground',
                 },
-                { name: '-image', field: 'background-image', hide: view.settings.useBackground },
+                { name: '-image', field: 'background-image', hidden: 'data.useBackground' },
                 {
                     name: '-repeat',
                     type: 'autocomplete',
                     field: 'background-repeat',
-                    hide: view.settings.useBackground,
+                    hidden: 'data.useBackground',
                     items: [
                         'repeat', 'repeat-x', 'repeat-y', 'no-repeat', 'initial', 'inherit',
                     ],
@@ -282,35 +302,35 @@ const View = props => {
                     name: '-attachment',
                     field: 'background-attachment',
                     type: 'autocomplete',
-                    hide: view.settings.useBackground,
+                    hidden: 'data.useBackground',
                     items: ['scroll', 'fixed', 'local', 'initial', 'inherit'],
                 },
                 {
                     name: '-position',
                     field: 'background-position',
                     type: 'autocomplete',
-                    hide: view.settings.useBackground,
+                    hidden: 'data.useBackground',
                     items: ['left top', 'left center', 'left bottom', 'right top', 'right center', 'right bottom', 'center top', 'center center', 'center bottom', 'initial', 'inherit'],
                 },
                 {
                     name: '-size',
                     field: 'background-size',
                     type: 'autocomplete',
-                    hide: view.settings.useBackground,
+                    hidden: 'data.useBackground',
                     items: ['auto', 'cover', 'contain', 'initial', 'inherit'],
                 },
                 {
                     name: '-clip',
                     field: 'background-clip',
                     type: 'autocomplete',
-                    hide: view.settings.useBackground,
+                    hidden: 'data.useBackground',
                     items: ['border-box', 'padding-box', 'content-box', 'initial', 'inherit'],
                 },
                 {
                     name: '-origin',
                     field: 'background-origin',
                     type: 'autocomplete',
-                    hide: view.settings.useBackground,
+                    hidden: 'data.useBackground',
                     items: ['border-box', 'padding-box', 'content-box', 'initial', 'inherit'],
                 },
             ],
@@ -354,7 +374,7 @@ const View = props => {
                     type: 'color',
                     name: 'Grid color',
                     field: 'snapColor',
-                    hide: view.settings.snapType !== 2,
+                    hidden: 'data.snapType !== 2',
                     notStyle: true,
                 },
                 {
@@ -362,7 +382,7 @@ const View = props => {
                     name: 'Grid size',
                     field: 'gridSize',
                     notStyle: true,
-                    hide: view.settings.snapType !== 2,
+                    hidden: 'data.snapType !== 2',
                 },
                 {
                     type: 'select',
@@ -372,16 +392,20 @@ const View = props => {
                     value: resolutionSelect,
                     onChange: e => {
                         const project = JSON.parse(JSON.stringify(props.project));
-                        const match = e.target.value.match(/^([0-9]+)x([0-9]+)$/);
                         if (e.target.value === 'none') {
-                            project[props.selectedView].settings.sizex = 0;
-                            project[props.selectedView].settings.sizey = 0;
-                            setUserResolution(false);
+                            delete project[props.selectedView].settings.sizex;
+                            delete project[props.selectedView].settings.sizey;
                         } else if (e.target.value === 'user') {
-                            setUserResolution(true);
+                            project[props.selectedView].settings.sizex = project[props.selectedView].settings.sizex || 0;
+                            project[props.selectedView].settings.sizey = project[props.selectedView].settings.sizey || 0;
+                            const _resolutionSelect = `${project[props.selectedView].settings.sizex}x${project[props.selectedView].settings.sizey}`;
+                            if (resolution.find(item => item.value === _resolutionSelect)) {
+                                project[props.selectedView].settings.sizex++;
+                            }
                         } else {
-                            [, project[props.selectedView].settings.sizex, project[props.selectedView].settings.sizey] = match;
-                            setUserResolution(false);
+                            const match = e.target.value.match(/^([0-9]+)x([0-9]+)$/);
+                            project[props.selectedView].settings.sizex = match[1];
+                            project[props.selectedView].settings.sizey = match[2];
                         }
                         props.changeProject(project);
                     },
@@ -389,13 +413,12 @@ const View = props => {
                 {
                     type: 'raw',
                     name: 'Width x height (px)',
-                    hide: !userResolution,
-                    Component:
-                    <span style={{ display: 'flex', alignItems: 'center' }}>
+                    hidden: 'data.sizex === undefined && data.sizey === undefined',
+                    Component: <span style={{ display: 'flex', alignItems: 'center' }}>
                         <TextField
                             variant="standard"
-                            value={view.settings.sizex}
-                            disabled={!props.editMode}
+                            value={view.settings.sizex === undefined ? '' : view.settings.sizex}
+                            disabled={!props.editMode || resolutionSelect !== 'user'}
                             InputProps={{
                                 classes: {
                                     input: Utils.clsx(props.classes.clearPadding, props.classes.fieldContent),
@@ -403,7 +426,7 @@ const View = props => {
                             }}
                             onChange={e => {
                                 const project = JSON.parse(JSON.stringify(props.project));
-                                project[props.selectedView].settings.sizex = e.target.value;
+                                project[props.selectedView].settings.sizex = parseInt(e.target.value, 10);
                                 props.changeProject(project);
                             }}
                         />
@@ -415,8 +438,8 @@ const View = props => {
                         />
                         <TextField
                             variant="standard"
-                            value={view.settings.sizey}
-                            disabled={!props.editMode}
+                            value={view.settings.sizey === undefined ? '' : view.settings.sizey}
+                            disabled={!props.editMode || resolutionSelect !== 'user'}
                             InputProps={{
                                 classes: {
                                     input: Utils.clsx(props.classes.clearPadding, props.classes.fieldContent),
@@ -424,7 +447,7 @@ const View = props => {
                             }}
                             onChange={e => {
                                 const project = JSON.parse(JSON.stringify(props.project));
-                                project[props.selectedView].settings.sizey = e.target.value;
+                                project[props.selectedView].settings.sizey = parseInt(e.target.value, 10);
                                 props.changeProject(project);
                             }}
                         />
@@ -436,16 +459,16 @@ const View = props => {
             name: 'Navigation',
             fields: [
                 {
-                    type: 'checkbox', name: 'Show navigation', field: 'navigation', notStyle: true,
+                    type: 'checkbox', name: 'Show navigation', field: 'navigation', notStyle: true, applyToAll: true, groupApply: true,
                 },
                 {
                     type: 'text', name: 'Title', field: 'navigationTitle', notStyle: true, hidden: '!data.navigation',
                 },
                 {
-                    type: 'checkbox', name: 'Show app bar', field: 'navigationBar', notStyle: true, default: true, hidden: '!data.navigation',
+                    type: 'checkbox', name: 'Show app bar', field: 'navigationBar', notStyle: true, default: true, hidden: '!data.navigation', applyToAll: true,
                 },
                 {
-                    type: 'color', name: 'Bar color', field: 'navigationBarColor', notStyle: true, hidden: '!data.navigation || !data.navigationBar',
+                    type: 'color', name: 'Bar color', field: 'navigationBarColor', notStyle: true, hidden: '!data.navigation || !data.navigationBar', applyToAll: true,
                 },
                 {
                     type: 'icon', name: 'Icon', field: 'navigationIcon', notStyle: true, hidden: '!data.navigation || data.navigationImage',
@@ -454,10 +477,13 @@ const View = props => {
                     type: 'image', name: 'Image', field: 'navigationImage', notStyle: true, hidden: '!data.navigation || data.navigationIcon',
                 },
                 {
-                    type: 'text', name: 'Menu header text', field: 'navigationHeaderText', notStyle: true, hidden: '!data.navigation',
+                    type: 'text', name: 'Menu header text', field: 'navigationHeaderText', notStyle: true, hidden: '!data.navigation', applyToAll: true,
                 },
                 {
-                    type: 'checkbox', name: 'Header for all views', field: 'navigationHeaderTextAll', notStyle: true, hidden: '!data.navigation || !data.navigationHeaderText',
+                    type: 'checkbox', name: 'Do not hide menu', field: 'navigationNoHide', notStyle: true, hidden: '!data.navigation', applyToAll: true,
+                },
+                {
+                    type: 'checkbox', name: 'Show background of button', field: 'navigationButtonBackground', notStyle: true, hidden: '!data.navigation || data.navigationNoHide', applyToAll: true,
                 },
             ],
         },
@@ -557,7 +583,7 @@ const View = props => {
                 },
             ],
         },
-    ];
+    ]), [resolutionSelect, `${view.settings.sizex}x${view.settings.sizey}`]);
 
     const [accordionOpen, setAccordionOpen] = useState(
         window.localStorage.getItem('attributesView')
@@ -595,6 +621,69 @@ const View = props => {
         setTimeout(() => props.setIsAllOpened(allOpened), 50);
     }
 
+    const viewList = Object.keys(props.project).filter(v => v !== '___settings' && v !== props.selectedView);
+
+    let allViewDialog = null;
+    if (showAllViewDialog) {
+        const viewsToChange = [];
+        if (showAllViewDialog.groupApply) {
+            // find all fields with applyToAll flag and if any is not equal show button
+            for (let f = 0; f < showAllViewDialog.group.fields.length; f++) {
+                const field = showAllViewDialog.group.fields[f];
+                if (field.applyToAll && !field.groupApply) {
+                    viewList.forEach(_view => {
+                        if (props.project[_view].settings.navigation &&
+                            props.project[_view].settings[field.field] !== props.project[props.selectedView].settings[field.field] &&
+                            !viewsToChange.includes(props.project[_view].name || _view)
+                        ) {
+                            viewsToChange.push(props.project[_view].name || _view);
+                        }
+                    });
+                }
+            }
+        } else {
+            viewList.forEach(_view => {
+                if (props.project[_view].settings.navigation &&
+                    props.project[_view].settings[showAllViewDialog.field] !== props.project[props.selectedView].settings[showAllViewDialog.field]
+                ) {
+                    viewsToChange.push(props.project[_view].name || _view);
+                }
+            });
+        }
+
+        allViewDialog = <ConfirmDialog
+            title={I18n.t(showAllViewDialog.groupApply ? 'Apply ALL navigation properties to all views' : 'Apply to all views')}
+            text={I18n.t('Following views will be changed: %s', viewsToChange.join(', '))}
+            onClose={result => {
+                if (result) {
+                    const project = JSON.parse(JSON.stringify(props.project));
+                    if (showAllViewDialog.groupApply) {
+                        // find all fields with applyToAll flag and if any is not equal show button
+                        for (let f = 0; f < showAllViewDialog.group.fields.length; f++) {
+                            const field = showAllViewDialog.group.fields[f];
+                            if (field.applyToAll && !field.groupApply) {
+                                viewList.forEach(_view => {
+                                    if (project[_view].settings.navigation) {
+                                        project[_view].settings[field.field] = project[props.selectedView].settings[field.field];
+                                    }
+                                });
+                            }
+                        }
+                    } else {
+                        viewList.forEach(_view => {
+                            if (project[_view].settings.navigation) {
+                                project[_view].settings[showAllViewDialog.field] = project[props.selectedView].settings[showAllViewDialog.field];
+                            }
+                        });
+                    }
+
+                    props.changeProject(project);
+                }
+                setShowAllViewDialog(null);
+            }}
+        />;
+    }
+
     return <div style={{ height: '100%', overflowY: 'auto' }}>
         {fields.map((group, key) => <Accordion
             classes={{
@@ -629,13 +718,13 @@ const View = props => {
                     <tbody>
                         {
                             group.fields.map((field, key2) => {
-                                if (field.hide) {
-                                    return null;
-                                }
                                 let error;
                                 let disabled = false;
                                 if (field.hidden) {
-                                    if (checkFunction(field.hidden, props.project[props.selectedView].settings)) {
+                                    if (field.hidden === true) {
+                                        return null;
+                                    }
+                                    if (field.hidden !== false && checkFunction(field.hidden, props.project[props.selectedView].settings)) {
                                         return null;
                                     }
                                 }
@@ -645,6 +734,8 @@ const View = props => {
                                 if (field.disabled) {
                                     if (field.disabled === true) {
                                         disabled = true;
+                                    } else if (field.disabled === false) {
+                                        disabled = false;
                                     } else {
                                         disabled = !!checkFunction(field.disabled, props.project[props.selectedView].settings);
                                     }
@@ -785,6 +876,7 @@ const View = props => {
                                         value={value}
                                         onChange={fileBlob => change(fileBlob)}
                                         previewClassName={props.classes.iconPreview}
+                                        disabled={!props.editMode || disabled}
                                         // icon={ImageIcon}
                                         // classes={props.classes}
                                     />;
@@ -804,10 +896,10 @@ const View = props => {
                                             fullWidth
                                             error={!!error}
                                             helperText={typeof error === 'string' ? I18n.t(error) : null}
-                                            disabled={disabled}
+                                            disabled={!props.editMode || disabled}
                                             InputProps={{
                                                 classes: { input: Utils.clsx(props.classes.clearPadding, props.classes.fieldContent) },
-                                                endAdornment: <Button disabled={disabled} size="small" onClick={() => setShowDialog(true)}>...</Button>,
+                                                endAdornment: <Button disabled={!props.editMode || disabled} size="small" onClick={() => setShowDialog(true)}>...</Button>,
                                             }}
                                             ref={textRef}
                                             value={value}
@@ -816,39 +908,44 @@ const View = props => {
                                             onChange={e => change(e.target.value)}
                                         />
                                         {urlPopper}
-                                        {showDialog ? <IODialog
+                                        {showDialog ? <SelectFileDialog
                                             title={I18n.t('Select file')}
-                                            open={!0}
                                             onClose={() => setShowDialog(false)}
-                                        >
-                                            <FileBrowser
-                                                ready
-                                                allowUpload
-                                                allowDownload
-                                                allowCreateFolder
-                                                allowDelete
-                                                allowView
-                                                showToolbar
-                                                imagePrefix="../"
-                                                selected={_value}
-                                                filterByType="images"
-                                                onSelect={(selected, isDoubleClick) => {
-                                                    const projectPrefix = `${props.adapterName}.${props.instance}/${props.projectName}/`;
-                                                    if (selected.startsWith(projectPrefix)) {
-                                                        selected = `_PRJ_NAME/${selected.substring(projectPrefix.length)}`;
-                                                    } else if (selected.startsWith('/')) {
-                                                        selected = `..${selected}`;
-                                                    } else if (!selected.startsWith('.')) {
-                                                        selected = `../${selected}`;
-                                                    }
-                                                    change(selected);
-                                                    isDoubleClick && setShowDialog(false);
-                                                }}
-                                                t={I18n.t}
-                                                lang={I18n.getLanguage()}
-                                                socket={props.socket}
-                                            />
-                                        </IODialog> : null}
+                                            allowUpload
+                                            allowDownload
+                                            allowCreateFolder
+                                            allowDelete
+                                            allowView
+                                            showToolbar
+                                            imagePrefix="../"
+                                            selected={_value}
+                                            filterByType="images"
+                                            onSelect={(selected, isDoubleClick) => {
+                                                const projectPrefix = `${props.adapterName}.${props.instance}/${props.projectName}/`;
+                                                if (selected.startsWith(projectPrefix)) {
+                                                    selected = `_PRJ_NAME/${selected.substring(projectPrefix.length)}`;
+                                                } else if (selected.startsWith('/')) {
+                                                    selected = `..${selected}`;
+                                                } else if (!selected.startsWith('.')) {
+                                                    selected = `../${selected}`;
+                                                }
+                                                change(selected);
+                                                isDoubleClick && setShowDialog(false);
+                                            }}
+                                            onOk={selected => {
+                                                const projectPrefix = `${props.adapterName}.${props.instance}/${props.projectName}/`;
+                                                if (selected.startsWith(projectPrefix)) {
+                                                    selected = `_PRJ_NAME/${selected.substring(projectPrefix.length)}`;
+                                                } else if (selected.startsWith('/')) {
+                                                    selected = `..${selected}`;
+                                                } else if (!selected.startsWith('.')) {
+                                                    selected = `../${selected}`;
+                                                }
+                                                change(selected);
+                                                setShowDialog(false);
+                                            }}
+                                            socket={props.socket}
+                                        /> : null}
                                     </>;
                                 } else if (field.type === 'slider') {
                                     result = <div style={{ display: 'flex' }}>
@@ -867,7 +964,7 @@ const View = props => {
                                         <Input
                                             className={props.classes.fieldContentSliderInput}
                                             value={value}
-                                            disabled={disabled}
+                                            disabled={!props.editMode || disabled}
                                             size="small"
                                             onChange={e => change(parseFloat(e.target.value))}
                                             classes={{ input: Utils.clsx(props.classes.clearPadding, props.classes.fieldContent) }}
@@ -878,7 +975,7 @@ const View = props => {
                                                 type: 'number',
                                             }}
                                         />
-                                        <IconButton onClick={() => change(null)}><ClearIcon /></IconButton>
+                                        <IconButton disabled={!props.editMode || disabled} onClick={() => change(null)}><ClearIcon /></IconButton>
                                     </div>;
                                 } else {
                                     result = <TextField
@@ -903,6 +1000,45 @@ const View = props => {
                                     helpText = <Tooltip title={I18n.t(field.title)}><InfoIcon className={props.classes.fieldHelpText} /></Tooltip>;
                                 }
 
+                                if (field.applyToAll) {
+                                    if (field.groupApply) {
+                                        let isShow = false;
+                                        // find all fields with applyToAll flag and if any is not equal show button
+                                        for (let f = 0; f < group.fields.length; f++) {
+                                            if (group.fields[f].applyToAll &&
+                                                !group.fields[f].groupApply &&
+                                                !isPropertySameInAllViews(props.project, group.fields[f].field, props.selectedView, viewList)
+                                            ) {
+                                                isShow = true;
+                                                break;
+                                            }
+                                        }
+                                        if (isShow) {
+                                            result = <div style={{ display: 'flex', width: '100%' }}>
+                                                <div style={{ flex: 1, lineHeight: '36px', marginRight: 4 }}>
+                                                    {result}
+                                                </div>
+                                                <Tooltip title={I18n.t('Apply ALL navigation properties to all views')}>
+                                                    <Button variant="contained" onClick={() => setShowAllViewDialog({ ...field, group })}>
+                                                        {I18n.t('apply_to_all')}
+                                                    </Button>
+                                                </Tooltip>
+                                            </div>;
+                                        }
+                                    } else if (!isPropertySameInAllViews(props.project, field.field, props.selectedView, viewList)) {
+                                        result = <div style={{ display: 'flex', width: '100%' }}>
+                                            <div style={{ flex: 1, lineHeight: '36px', marginRight: 4 }}>
+                                                {result}
+                                            </div>
+                                            <Tooltip title={I18n.t('Apply to all views')}>
+                                                <Button variant="outlined" onClick={() => setShowAllViewDialog(field)}>
+                                                    {I18n.t('apply_to_all')}
+                                                </Button>
+                                            </Tooltip>
+                                        </div>;
+                                    }
+                                }
+
                                 return <tr key={key2}>
                                     <td className={props.classes.fieldTitle} title={!field.title ? null : I18n.t(field.title)}>
                                         {I18n.t(field.name)}
@@ -916,6 +1052,7 @@ const View = props => {
                 </table>
             </AccordionDetails>
         </Accordion>)}
+        {allViewDialog}
     </div>;
 };
 

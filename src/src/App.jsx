@@ -25,6 +25,7 @@ import IconAttributes from '@mui/icons-material/ListAlt';
 import GenericApp from '@iobroker/adapter-react-v5/GenericApp';
 import {
     i18n as I18n, Utils, Loader, Confirm as ConfirmDialog,
+    Message as MessageDialog,
 } from '@iobroker/adapter-react-v5';
 
 import Attributes from './Attributes';
@@ -254,6 +255,7 @@ class App extends GenericApp {
             disableInteraction: JSON.parse(window.localStorage.getItem('disableInteraction')),
             toolbarHeight: window.localStorage.getItem('Vis.toolbarForm') || 'full',
             deleteWidgetsDialog: false,
+            messageDialog: null,
             visCommonCss: null,
             visUserCss: null,
             widgetHint: window.localStorage.getItem('widgetHint') || 'light',
@@ -262,6 +264,7 @@ class App extends GenericApp {
             loadingProgress: { step: 0, total: 0 },
             showCodeDialog: null,
             confirmDialog: null,
+            showProjectUpdateDialog: false,
         });
 
         window.addEventListener('hashchange', this.onHashChange, false);
@@ -294,30 +297,31 @@ class App extends GenericApp {
         if (!this.state.editMode) {
             return;
         }
+        const controlKey = e.ctrlKey || e.cmdKey;
         if (document.activeElement.tagName === 'BODY') {
-            if (e.ctrlKey && e.key === 'z' && this.state.historyCursor !== 0) {
+            if (controlKey && e.key === 'z' && this.state.historyCursor !== 0) {
                 e.preventDefault();
                 await this.undo();
             }
-            if (e.ctrlKey && e.key === 'y' && this.state.historyCursor !== this.state.history.length - 1) {
+            if (controlKey && e.key === 'y' && this.state.historyCursor !== this.state.history.length - 1) {
                 e.preventDefault();
                 await this.redo();
             }
             if (this.state.selectedWidgets.length) {
-                if (e.ctrlKey && e.key === 'c') {
+                if (controlKey && e.key === 'c') {
                     e.preventDefault();
                     await this.copyWidgets();
                 }
-                if (e.ctrlKey && e.key === 'x') {
+                if (controlKey && e.key === 'x') {
                     e.preventDefault();
                     await this.cutWidgets();
                 }
             }
-            if (e.ctrlKey && e.key === 'v' && Object.keys(this.state.widgetsClipboard.widgets).length) {
+            if (controlKey && e.key === 'v' && Object.keys(this.state.widgetsClipboard.widgets).length) {
                 e.preventDefault();
                 await this.pasteWidgets();
             }
-            if (e.ctrlKey && e.key === 'a') {
+            if (controlKey && e.key === 'a') {
                 e.preventDefault();
                 if (this.state.selectedGroup) {
                     this.setSelectedWidgets(Object.keys(this.state.project[this.state.selectedView].widgets)
@@ -343,24 +347,53 @@ class App extends GenericApp {
             .then(() => {});
     };
 
-    onProjectChange = (id, fileName, size) => {
+    onProjectChange = (id, fileName) => {
         if (fileName.endsWith('.json')) {
-            this.loadProject(this.state.projectName);
+            // if runtime => just update project
+            if (this.state.runtime) {
+                this.loadProject(this.state.projectName);
+            } else if (fileName.endsWith(`${this.state.projectName}/vis-views.json`)) {
+                // compare last executed file with new one
+                this.socket.readFile(this.adapterId, fileName)
+                    .then(file => {
+                        if (!file || this.lastProjectJSONfile !== file.file) { // adapter-react-v5@4.x delivers file.file
+                            this.setState({ showProjectUpdateDialog: true });
+                        }
+                    });
+            }
         }
     };
 
-    loadProject = async projectName => {
-        let file;
-        try {
-            file = await this.socket.readFile(this.adapterId, `${projectName}/vis-views.json`);
-            if (typeof file === 'object') {
-                file = file.data;
+    loadProject = async (projectName, file) => {
+        if (!file) {
+            try {
+                file = await this.socket.readFile(this.adapterId, `${projectName}/vis-views.json`);
+                if (typeof file === 'object') {
+                    file = file.file; // adapter-react-v5@4.x delivers file.file
+                }
+            } catch (err) {
+                console.warn(`Cannot read project file vis-views.json: ${err}`);
+                file = '{}';
             }
-        } catch (err) {
-            console.warn(`Cannot read project file vis-views.json: ${err}`);
-            file = '{}';
         }
-        const project = JSON.parse(file);
+
+        if (!this.state.runtime) {
+            // remember last loaded project file
+            this.lastProjectJSONfile = file;
+        }
+
+        let project;
+        try {
+            project = JSON.parse(file);
+        } catch (e) {
+            window.alert('Cannot parse project file!');
+            project = {
+                'Cannot parse project file!': {
+                    widgets: {},
+                },
+            };
+        }
+
         project.___settings = project.___settings || {};
         project.___settings.folders = project.___settings.folders || [];
         let selectedView;
@@ -460,7 +493,13 @@ class App extends GenericApp {
             this.socket.unsubscribeFiles(this.adapterId, `${this.subscribedProject}/*`, this.onProjectChange);
         }
 
-        if (project.___settings.reloadOnEdit !== false && this.state.runtime) {
+        if (this.state.runtime) {
+            if (project.___settings.reloadOnEdit !== false) {
+                this.subscribedProject = projectName;
+                // subscribe on changes
+                this.socket.subscribeFiles(this.adapterId, `${projectName}/*`, this.onProjectChange);
+            }
+        } else {
             this.subscribedProject = projectName;
             // subscribe on changes
             this.socket.subscribeFiles(this.adapterId, `${projectName}/*`, this.onProjectChange);
@@ -486,6 +525,37 @@ class App extends GenericApp {
         this.setState({ loadingProgress: { step, total } });
     };
 
+    onVisChanged() {
+        this.setState({
+            messageDialog: {
+                text: I18n.t('Detected new version of vis files. Reloading in 2 seconds...'),
+                title: I18n.t('Reloading'),
+                ok: I18n.t('Reload now'),
+                callback: () => {
+                    if (!this.state.runtime && this.changeTimer) {
+                        this.needRestart = true;
+                    } else {
+                        setTimeout(() =>
+                            window.location.reload(), 2000);
+                    }
+                },
+            },
+        });
+        if (!this.state.runtime && this.changeTimer) {
+            this.needRestart = true;
+        } else {
+            setTimeout(() =>
+                window.location.reload(), 2000);
+        }
+    }
+
+    onWidgetSetsChanged = (id, state) => {
+        if (state && this.lastUploadedState && state.val !== this.lastUploadedState) {
+            this.lastUploadedState = state.val;
+            this.onVisChanged();
+        }
+    };
+
     async onConnectionReady() {
         // preload all widgets first
         if (this.state.widgetsLoaded === WIDGETS_LOADING_STEP_HTML_LOADED) {
@@ -504,6 +574,17 @@ class App extends GenericApp {
                 ? JSON.parse(window.localStorage.getItem('Vis.splitSizes'))
                 : [20, 60, 20],
         });
+
+        // subscribe on info.uploaded
+        this.socket.subscribeState(`${this.adapterName}.${this.instance}.info.uploaded`, this.onWidgetSetsChanged);
+        const uploadedState = await this.socket.getState(`${this.adapterName}.${this.instance}.info.uploaded`);
+        if (uploadedState && uploadedState.val !== this.lastUploadedState) {
+            if (this.lastUploadedState) {
+                this.onVisChanged();
+            } else {
+                this.lastUploadedState = uploadedState.val;
+            }
+        }
 
         if (window.localStorage.getItem('projectName')) {
             await this.loadProject(window.localStorage.getItem('projectName'));
@@ -650,10 +731,10 @@ class App extends GenericApp {
         fields.forEach(group => {
             if (group.fields) {
                 group.fields.forEach(field => {
-                    if (!field.noInit && (field.name.includes('oid') || field.type === 'id')) {
-                        widgets[newKey].data[field.name] = 'nothing_selected';
+                    if (field.name === 'oid') {
+                        widgets[newKey].data.oid = 'nothing_selected';
                     }
-                    if (field.default) {
+                    if (field.default !== undefined && field.default !== null) {
                         widgets[newKey].data[field.name] = field.default;
                         widgets[newKey].data[`g_${group.name}`] = true;
                     }
@@ -1165,6 +1246,7 @@ class App extends GenericApp {
         this.savingTimer && clearTimeout(this.savingTimer);
         this.savingTimer = setTimeout(async () => {
             this.savingTimer = null;
+            this.lastProjectJSONfile = JSON.stringify(this.state.project, null, 2);
             if ('TextEncoder' in window) {
                 const encoder = new TextEncoder();
                 const data = encoder.encode(JSON.stringify(this.state.project, null, 2));
@@ -1676,6 +1758,62 @@ class App extends GenericApp {
         return null;
     }
 
+    renderShowProjectUpdateDialog() {
+        if (!this.state.showProjectUpdateDialog) {
+            return null;
+        }
+        return <ConfirmDialog
+            text={I18n.t('Project was updated by another browser instance. Do you want to reload it?')}
+            title={I18n.t('Project was updated')}
+            fullWidth={false}
+            onClose={result =>
+                this.setState({ showProjectUpdateDialog: false }, () => {
+                    if (result) {
+                        this.loadProject(this.state.projectName);
+                    }
+                })}
+        />;
+    }
+
+    renderCreateFirstProjectDialog() {
+        return this.state.createFirstProjectDialog ? <CreateFirstProjectDialog
+            open={!0}
+            onClose={() => this.setState({ createFirstProjectDialog: false })}
+            addProject={this.addProject}
+        /> : null;
+    }
+
+    renderDeleteDialog() {
+        return this.state.deleteWidgetsDialog ?
+            <ConfirmDialog
+                fullWidth={false}
+                title={I18n.t('Delete widgets')}
+                text={I18n.t('Are you sure to delete widgets %s?', this.state.selectedWidgets.join(', '))}
+                ok={I18n.t('Delete')}
+                dialogName="deleteDialog"
+                suppressQuestionMinutes={5}
+                onClose={isYes => {
+                    if (isYes) {
+                        this.deleteWidgetsAction();
+                    }
+                    this.setState({ deleteWidgetsDialog: false });
+                }}
+            />
+            : null;
+    }
+
+    renderMessageDialog() {
+        return this.state.messageDialog ? <MessageDialog
+            text={this.state.messageDialog.text}
+            title={this.state.messageDialog.title}
+            onClose={() => {
+                if (!this.state.messageDialog.noClose) {
+                    this.setState({ messageDialog: null });
+                }
+            }}
+        /> : null;
+    }
+
     render() {
         if (!this.state.loaded || !this.state.project || !this.state.groups) {
             return <StylesProvider generateClassName={generateClassName}>
@@ -1869,35 +2007,17 @@ class App extends GenericApp {
                             </DndProvider>
                         </div>
                     </div>
-                    {this.state.createFirstProjectDialog ? <CreateFirstProjectDialog
-                        open={!0}
-                        onClose={() => this.setState({ createFirstProjectDialog: false })}
-                        addProject={this.addProject}
-                    /> : null}
-                    {this.state.deleteWidgetsDialog ?
-                        <ConfirmDialog
-                            fullWidth={false}
-                            title={I18n.t('Delete widgets')}
-                            text={I18n.t('Are you sure to delete widgets %s?', this.state.selectedWidgets.join(', '))}
-                            ok={I18n.t('Delete')}
-                            dialogName="deleteDialog"
-                            suppressQuestionMinutes={5}
-                            onClose={isYes => {
-                                if (isYes) {
-                                    this.deleteWidgetsAction();
-                                }
-                                this.setState({ deleteWidgetsDialog: false });
-                            }}
-                        />
-                        : null}
+                    {this.renderCreateFirstProjectDialog()}
+                    {this.renderDeleteDialog()}
                     {this.renderAlertDialog()}
                     {this.renderConfirmDialog()}
                     {this.renderShowCodeDialog()}
+                    {this.renderShowProjectUpdateDialog()}
+                    {this.renderMessageDialog()}
                 </ThemeProvider>
             </StyledEngineProvider>
         </StylesProvider>;
     }
 }
-
 
 export default withStyles(styles)(App);

@@ -53,8 +53,8 @@ const CSS = props => {
         const load = async () => {
             try {
                 const commonCss = await props.socket.readFile(props.adapterId.split('.')[0], 'css/vis-common-user.css');
-                if (commonCss.type) {
-                    setGlobalCss(commonCss.data);
+                if (commonCss.mimeType) {
+                    setGlobalCss(commonCss.file);
                 } else {
                     setGlobalCss(commonCss);
                 }
@@ -65,8 +65,8 @@ const CSS = props => {
             }
             try {
                 const userCss = await props.socket.readFile(props.adapterId, `${props.projectName}/vis-user.css`);
-                if (userCss.type) {
-                    setLocalCss(userCss.data);
+                if (userCss.mimeType) {
+                    setLocalCss(userCss.file);
                 } else {
                     setLocalCss(userCss);
                 }
@@ -99,7 +99,7 @@ const CSS = props => {
         value = value.data;
     }
 
-    return <div>
+    return <>
         <div style={{ display: 'flex', alignItems: 'center' }}>
             {showHelp ? <Dialog
                 open={!0}
@@ -141,13 +141,14 @@ const CSS = props => {
             value={value}
             onChange={newValue => save(newValue, type)}
             width="100%"
+            height="calc(100% - 34px)"
             setOptions={{
                 enableBasicAutocompletion: true,
                 enableLiveAutocompletion: true,
                 enableSnippets: true,
             }}
         />
-    </div>;
+    </>;
 };
 
 CSS.propTypes = {

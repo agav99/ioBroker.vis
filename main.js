@@ -16,20 +16,68 @@ const fs             = require('fs');
 const syncWidgetSets = require('./lib/install.js');
 const https          = require('https');
 const jwt            = require('jsonwebtoken');
+const path           = require('path');
+const cert           = fs.readFileSync(`${__dirname}/lib/cloudCert.crt`);
+
 let adapter;
-let isLicenseError = false;
+let isLicenseError   = false;
 let lastProgressUpdate;
+let widgetInstances  = {};
 
 function startAdapter(options) {
     options = options || {};
 
     Object.assign(options, {
         name: adapterName,
-        ready: () => main()
+        ready: main,
+        objectChange: (id, obj) => {
+            // if it is instance object
+            if (id.startsWith('system.adapter.') &&
+                id.match(/\d+$/) &&
+                id !== 'system.adapter.vis-2-beta.0' &&
+                id !== 'system.adapter.vis.0'
+            ) {
+                if (obj && obj.type !== 'instance') {
+                    return;
+                }
+                id = id.substring('system.adapter.'.length).replace(/\.\d+$/, '');
+                if (!obj || !obj.common || !obj.common.version) {
+                    if (widgetInstances[id]) {
+                        delete widgetInstances[id];
+                        buildHtmlPages();
+                    }
+                } else
+                // Check if widgets folder exists
+                if (POSSIBLE_WIDGET_SETS_LOCATIONS.find(dir => fs.existsSync(`${dir}/iobroker.${id}/widgets/`))) {
+                    // still exists
+                    if (!widgetInstances[id] || widgetInstances[id] !== obj.common.version) {
+                        widgetInstances[id] = obj.common.version;
+                        buildHtmlPages();
+                    }
+                } else if (widgetInstances[id]) {
+                    delete widgetInstances[id];
+                    buildHtmlPages();
+                }
+            }
+        },
+        message: obj => processMessage(obj),
     });
 
     adapter = new utils.Adapter(options);
     return adapter;
+}
+
+async function processMessage(msg) {
+    if (msg && msg.command === 'checkLicense' && msg.message && msg.callback) {
+        const obj = await adapter.getForeignObjectAsync(`system.adapter.${msg.message}.0`);
+        if (!obj || !obj.native || (!obj.native.license && !obj.native.useLicenseManager)) {
+            console.log('[vis-2-widgets-jaeger-design] License not found');
+            adapter.sendTo(msg.from, msg.command, {error: 'License not found'}, msg.callback);
+        } else {
+            const result = await checkL(obj.native.license, obj.native.useLicenseManager, msg.message);
+            adapter.sendTo(msg.from, msg.command, {result}, msg.callback);
+        }
+    }
 }
 
 async function generateWidgetsHtml(widgetSets) {
@@ -42,12 +90,15 @@ async function generateWidgetsHtml(widgetSets) {
         let name;
 
         if (typeof widgetSets[w] === 'object') {
-            name = widgetSets[w].name + '.html';
+            name = `${widgetSets[w].name}.html`;
         } else {
-            name = widgetSets[w] + '.html';
+            name = `${widgetSets[w]}.html`;
         }
         file = fs.readFileSync(`${__dirname}/www/widgets/${name}`);
         // extract all css and js
+
+        // mark all script with data-widgetset attribute
+        file = file.toString().replace(/<script/g, `<script data-widgetset="${name.replace('.html', '')}"`);
 
         text += `<!-- --------------${name}--- START -->\n${file.toString()}\n<!-- --------------${name}--- END -->\n`;
     }
@@ -62,12 +113,12 @@ async function generateWidgetsHtml(widgetSets) {
         data = data.file;
     }
     if (data && data !== text) {
-        fs.writeFileSync(__dirname + '/www/widgets.html', text);
+        fs.writeFileSync(`${__dirname}/www/widgets.html`, text);
         // upload file to DB
         await adapter.writeFileAsync(adapterName, 'www/widgets.html', text);
         return true;
-    } else if (!fs.existsSync(__dirname + '/www/widgets.html') || fs.readFileSync(__dirname + '/www/widgets.html').toString() !== text) {
-        fs.writeFileSync(__dirname + '/www/widgets.html', text);
+    } else if (!fs.existsSync(`${__dirname}/www/widgets.html`) || fs.readFileSync(`${__dirname}/www/widgets.html`).toString() !== text) {
+        fs.writeFileSync(`${__dirname}/www/widgets.html`, text);
     }
 
     return false;
@@ -93,17 +144,17 @@ async function generateConfigPage() {
         changed = true;
         adapter.log.info('config.js changed. Upload.');
         await adapter.writeFileAsync(adapterName, 'config.js', configJs);
-        fs.writeFileSync(__dirname + '/www/config.js', configJs);
-        !fs.existsSync(__dirname + '/www/js') && fs.mkdirSync(__dirname + '/www/js');
-        fs.writeFileSync(__dirname + '/www/js/config.js', configJs); // backwards compatibility with cloud
-    } else if (!fs.existsSync(__dirname + '/www/config.js') || fs.readFileSync(__dirname + '/www/config.js').toString() !== configJs) {
-        fs.writeFileSync(__dirname + '/www/config.js', configJs);
-        !fs.existsSync(__dirname + '/www/js') && fs.mkdirSync(__dirname + '/www/js');
-        fs.writeFileSync(__dirname + '/www/js/config.js', configJs); // backwards compatibility with cloud
+        fs.writeFileSync(`${__dirname}/www/config.js`, configJs);
+        !fs.existsSync(`${__dirname}/www/js`) && fs.mkdirSync(`${__dirname}/www/js`);
+        fs.writeFileSync(`${__dirname}/www/js/config.js`, configJs); // backwards compatibility with cloud
+    } else if (!fs.existsSync(`${__dirname}/www/config.js`) || fs.readFileSync(`${__dirname}/www/config.js`).toString() !== configJs) {
+        fs.writeFileSync(`${__dirname}/www/config.js`, configJs);
+        !fs.existsSync(`${__dirname}/www/js`) && fs.mkdirSync(__dirname + '/www/js');
+        fs.writeFileSync(`${__dirname}/www/js/config.js`, configJs); // backwards compatibility with cloud
     }
-    if (!fs.existsSync(__dirname + '/www/js/config.js') || fs.readFileSync(__dirname + '/www/js/config.js').toString() !== configJs) {
-        !fs.existsSync(__dirname + '/www/js') && fs.mkdirSync(__dirname + '/www/js');
-        fs.writeFileSync(__dirname + '/www/js/config.js', configJs); // backwards compatibility with cloud
+    if (!fs.existsSync(`${__dirname}/www/js/config.js`) || fs.readFileSync(`${__dirname}/www/js/config.js`).toString() !== configJs) {
+        !fs.existsSync(`${__dirname}/www/js`) && fs.mkdirSync(`${__dirname}/www/js`);
+        fs.writeFileSync(`${__dirname}/www/js/config.js`, configJs); // backwards compatibility with cloud
     }
 
     // Create common user CSS file
@@ -125,9 +176,9 @@ async function generateConfigPage() {
 }
 
 // delete this function as js.controller 4.0 will be mainstream
-async function getSuitableLicenses(all) {
+async function getSuitableLicenses(all, name) {
     if (adapter.getSuitableLicenses) {
-        return adapter.getSuitableLicenses(all);
+        return adapter.getSuitableLicenses(all, name);
     } else {
         const licenses = [];
         try {
@@ -144,7 +195,6 @@ async function getSuitableLicenses(all) {
 
             if (obj && obj.native && obj.native.licenses && obj.native.licenses.length) {
                 const now = Date.now();
-                const cert = fs.readFileSync(__dirname + '/lib/cloudCert.crt');
                 const version = adapter.pack.version.split('.')[0];
 
                 obj.native.licenses.forEach(license => {
@@ -157,7 +207,7 @@ async function getSuitableLicenses(all) {
                                 new Date(decoded.valid_till).getTime() > now)
                         ) {
                             if (
-                                decoded.name.startsWith('iobroker.' + this.name) &&
+                                decoded.name.startsWith(`iobroker.${name || adapterName}`) &&
                                 (all || !license.usedBy || license.usedBy === this.namespace)
                             ) {
                                 // Licenses for version ranges 0.x and 1.x are handled identically and are valid for both version ranges.
@@ -223,7 +273,7 @@ async function getSuitableLicenses(all) {
     }
 }
 
-function checkLicense(license, uuid, originalError) {
+function checkLicense(license, uuid, originalError, name) {
     if (license && license.expires * 1000 < new Date().getTime()) {
         adapter.log.error(`Cannot check license: Expired on ${new Date(license.expires * 1000).toString()}`);
         return true;
@@ -238,6 +288,10 @@ function checkLicense(license, uuid, originalError) {
             return false;
         }
     } else {
+        if (license.name !== name && license.name !== `iobroker.${name}`) {
+            adapter.log.error(`License is for other adapter "${license.name}". Expected "iobroker.${name}"`);
+            return true;
+        }
         const code = [];
         for (let i = 0; i < license.type.length; i++) {
             code.push('\\u00' + license.type.charCodeAt(i).toString(16));
@@ -264,17 +318,17 @@ function checkLicense(license, uuid, originalError) {
     }
 }
 
-function check(license, uuid, originalError) {
+function check(license, uuid, originalError, name) {
     try {
-        const decoded = jwt.verify(license, fs.readFileSync(__dirname + '/lib/cloudCert.crt'));
-        return checkLicense(decoded, uuid, originalError);
+        const decoded = jwt.verify(license, fs.readFileSync(`${__dirname}/lib/cloudCert.crt`));
+        return checkLicense(decoded, uuid, originalError, name);
     } catch (err) {
-        adapter.log.error('Cannot check license: ' + originalError);
+        adapter.log.error(`Cannot check license: ${originalError}`);
         return true
     }
 }
 
-function doLicense(license, uuid) {
+function doLicense(license, uuid, name) {
     return new Promise((resolve, reject) => {
         const data = JSON.stringify({json: license, uuid});
 
@@ -299,9 +353,13 @@ function doLicense(license, uuid) {
                 try {
                     const data = JSON.parse(result);
                     if (data.result === 'OK') {
+                        if (data.name !== `iobroker.${name}` && data.name !== name) {
+                            adapter.log.error(`License is for other adapter "${data.name}". Expected "iobroker.${name}"`);
+                            resolve(true);
+                        } else
                         if (uuid.length !== 36 && uuid.substring(0, 2) !== 'IO') {
                             try {
-                                const decoded = jwt.verify(license, fs.readFileSync(__dirname + '/lib/cloudCert.crt'));
+                                const decoded = jwt.verify(license, fs.readFileSync(`${__dirname}/lib/cloudCert.crt`));
                                 if (!decoded || decoded.invoice === 'free') {
                                     adapter.log.error('Cannot use free license with commercial device!');
                                     resolve(true);
@@ -309,7 +367,7 @@ function doLicense(license, uuid) {
                                     resolve(false);
                                 }
                             } catch (err) {
-                                adapter.log.error('Cannot check license: ' + err);
+                                adapter.log.error(`Cannot check license: ${err}`);
                                 resolve(true);
                             }
                         } else {
@@ -317,7 +375,6 @@ function doLicense(license, uuid) {
                             resolve(false);
                         }
                     } else {
-                        isLicenseError = true
                         adapter.log.error(`License is invalid! Nothing updated. Error: ${data ? data.result : 'unknown'}`);
                         resolve(true);
                     }
@@ -335,10 +392,56 @@ function doLicense(license, uuid) {
     })
 }
 
+function collectWidgetSets(dir, sets) {
+    let dirs = fs.readdirSync(dir);
+    dir = dir.replace(/\\/g, '/');
+    if (!dir.endsWith('/')) {
+        dir += '/';
+    }
+    sets = sets || [];
+    for (let d = 0; d < dirs.length; d++) {
+        if (dirs[d].toLowerCase().startsWith('iobroker.') &&
+            !sets.includes(dirs[d].substring('iobroker.'.length)) &&
+            fs.existsSync(`${dir}${dirs[d]}/widgets/`)
+        ) {
+            let pack;
+            try {
+                pack = JSON.parse(fs.readFileSync(`${dir}${dirs[d]}/io-package.json`).toString());
+            } catch (e) {
+                pack = null;
+                console.warn(`Cannot parse "${dir}${dirs[d]}/io-package.json": ${e}`);
+            }
+            sets.push({path: dir + dirs[d], name: dirs[d].toLowerCase(), pack});
+        }
+    }
+
+    return sets;
+}
+
+const POSSIBLE_WIDGET_SETS_LOCATIONS = [
+    path.normalize(`${__dirname}/../`),
+    path.normalize(`${__dirname}/node_modules/`),
+    path.normalize(`${__dirname}/../../`),
+];
+
 async function readAdaptersList() {
     const res = await adapter.getObjectViewAsync('system', 'instance', {});
-    return res.rows.filter(item => item.value.common.enabled || item.value.common.name.startsWith('vis-')) // some vis-xxx instances are disabled, but they cannot be activated from admin
-        .map(item => item.value._id.replace('system.adapter.', '').replace(/\.\d+$/, '')).sort();
+
+    const instances = [];
+    res.rows
+        .forEach(item => {
+            const name = item.value._id.replace('system.adapter.', '').replace(/\.\d+$/, '');
+            if (!instances.includes(name)) {
+                instances.push(name);
+            }
+        });
+    instances.sort();
+
+    let sets = [];
+    POSSIBLE_WIDGET_SETS_LOCATIONS.forEach(dir => collectWidgetSets(dir, sets));
+    sets = sets.filter(s => instances.includes(s.name.substring('iobroker.'.length)));
+
+    return sets;
 }
 
 /**
@@ -351,7 +454,7 @@ async function collectExistingFilesToDelete(path) {
     let _dirs = [];
     let files;
     try {
-        adapter.log.debug('Scanning ' + path);
+        adapter.log.debug(`Scanning ${path}`);
         files = await adapter.readDirAsync(adapterName, path);
     } catch {
         // ignore err
@@ -411,12 +514,12 @@ async function upload(files) {
         let attName = file.substring((__dirname + '/www/').length).replace(/\\/g, '/');
         if (files.length - f > 100) {
             (!f || !((files.length - f - 1) % 50)) &&
-            adapter.log.debug(`upload [${files.length - f - 1}] ${file.substring((__dirname + '/www/').length)} ${attName}`);
+            adapter.log.debug(`upload [${files.length - f - 1}] ${file.substring((`${__dirname}/www/`).length)} ${attName}`);
         } else if (files.length - f - 1 > 20) {
             (!f || !((files.length - f - 1) % 10)) &&
-            adapter.log.debug(`upload [${files.length - f - 1}] ${file.substring((__dirname + '/www/').length)} ${attName}`);
+            adapter.log.debug(`upload [${files.length - f - 1}] ${file.substring((`${__dirname}/www/`).length)} ${attName}`);
         } else {
-            adapter.log.debug(`upload [${files.length - f - 1}] ${file.substring((__dirname + '/www/').length)} ${attName}`);
+            adapter.log.debug(`upload [${files.length - f - 1}] ${file.substring((`${__dirname}/www/`).length)} ${attName}`);
         }
 
         // Update upload indicator
@@ -558,6 +661,64 @@ async function copyFolder(sourceId, sourcePath, targetId, targetPath) {
     }
 }
 
+async function buildHtmlPages() {
+    const configChanged = await generateConfigPage();
+    const enabledList = await readAdaptersList();
+
+    widgetInstances = {};
+    enabledList.forEach(adapter =>
+        widgetInstances[adapter.name.substring('iobroker.'.length)] = adapter.pack && adapter.pack.common && adapter.pack.common.version);
+
+    const {widgetSets, filesChanged} = syncWidgetSets(enabledList);
+    const widgetsChanged = await generateWidgetsHtml(widgetSets);
+
+    const indexHtml = fs.readFileSync(`${__dirname}/www/index.html`).toString('utf8');
+    let uploadedIndexHtml;
+    try {
+        uploadedIndexHtml = await adapter.readFileAsync(adapterName, 'index.html');
+    } catch (err) {
+        // ignore
+    }
+    if (typeof uploadedIndexHtml === 'object') {
+        uploadedIndexHtml = uploadedIndexHtml.file;
+    }
+    uploadedIndexHtml = uploadedIndexHtml ? uploadedIndexHtml.toString('utf8') : uploadedIndexHtml;
+
+    if (configChanged || widgetsChanged || filesChanged || uploadedIndexHtml !== indexHtml) {
+        await uploadAdapter();
+        await adapter.setStateAsync('info.uploaded', Date.now(), true);
+    } else {
+        const state = await adapter.getStateAsync('info.uploaded');
+        if (!state || !state.val) {
+            adapter.setStateAsync('info.uploaded', Date.now(), true);
+        }
+    }
+}
+
+async function checkL(license, useLicenseManager, name) {
+    const uuidObj = await adapter.getForeignObjectAsync('system.meta.uuid');
+    if (!uuidObj || !uuidObj.native || !uuidObj.native.uuid) {
+        adapter.log.error('UUID not found!');
+        return false;
+    } else {
+        if (useLicenseManager) {
+            license = await getSuitableLicenses(true, name);
+            license = license[0] && license[0].json;
+        }
+
+        if (!license) {
+            adapter.log.error('No license found for vis. Please get one on https://iobroker.net !');
+            return false;
+        } else {
+            try {
+                return !await doLicense(license, uuidObj.native.uuid, name);
+            } catch (err) {
+                return check(license, uuidObj.native.uuid, err, name);
+            }
+        }
+    }
+}
+
 async function main() {
     const visObj = await adapter.getForeignObjectAsync(adapterName);
 
@@ -595,55 +756,22 @@ async function main() {
         await adapter.setForeignObjectAsync(systemView._id, systemView);
     }
 
+    // Change running mode to daemon
+    const instanceObj = await adapter.getForeignObjectAsync(`system.adapter.${adapter.namespace}`);
+    if (instanceObj && instanceObj.common && instanceObj.common.mode !== 'daemon') {
+        instanceObj.common.mode = 'daemon';
+
+        await adapter.setForeignObjectAsync(instanceObj._id, instanceObj);
+        // restart will be done by controller
+        return;
+    }
+
     // first check license
     if (!adapter.config.useLicenseManager && (!adapter.config.license || typeof adapter.config.license !== 'string')) {
         isLicenseError = true
         adapter.log.error('No license found for vis. Please get one on https://iobroker.net !');
     } else {
-        const uuidObj = await adapter.getForeignObjectAsync('system.meta.uuid');
-        if (!uuidObj || !uuidObj.native || !uuidObj.native.uuid) {
-            isLicenseError = true
-            adapter.log.error('UUID not found!');
-        } else {
-            let license = adapter.config.license;
-            if (adapter.config.useLicenseManager) {
-                license = await getSuitableLicenses();
-                license = license[0] && license[0].json;
-            }
-
-            if (!license) {
-                adapter.log.error('No license found for vis. Please get one on https://iobroker.net !');
-                isLicenseError = true;
-            } else {
-                try {
-                    isLicenseError = await doLicense(license, uuidObj.native.uuid);
-                } catch (err) {
-                    isLicenseError = check(license, uuidObj.native.uuid, err);
-                }
-            }
-        }
-    }
-
-    const configChanged = await generateConfigPage();
-    const enabledList = await readAdaptersList();
-
-    const {widgetSets, filesChanged} = syncWidgetSets(false, enabledList);
-    const widgetsChanged = await generateWidgetsHtml(widgetSets);
-
-    const indexHtml = fs.readFileSync(__dirname + '/www/index.html').toString('utf8');
-    let uploadedIndexHtml;
-    try {
-        uploadedIndexHtml = await adapter.readFileAsync(adapterName, 'index.html');
-    } catch (err) {
-        // ignore
-    }
-    if (typeof uploadedIndexHtml === 'object') {
-        uploadedIndexHtml = uploadedIndexHtml.file;
-    }
-    uploadedIndexHtml = uploadedIndexHtml ? uploadedIndexHtml.toString('utf8') : uploadedIndexHtml;
-
-    if (configChanged || widgetsChanged || filesChanged || uploadedIndexHtml !== indexHtml) {
-        await uploadAdapter();
+        isLicenseError = !(await checkL(adapter.config.license, adapter.config.useLicenseManager, adapterName));
     }
 
     if (adapterName.includes('beta')) {
@@ -673,7 +801,9 @@ async function main() {
         }
     }
 
-    adapter.stop();
+    await buildHtmlPages();
+
+    adapter.subscribeForeignObjects('system.adapter.*');
 }
 
 // If started as allInOne mode => return function to create instance
