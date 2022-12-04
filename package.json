@@ -1,16 +1,16 @@
 {
   "name": "iobroker.vis",
   "description": "Graphical user interface for ioBroker.",
-  "version": "1.4.15",
+  "version": "1.4.20",
   "author": {
-    "name": "bluefox",
+    "name": "agav fork",
     "email": "dogafox@gmail.com"
   },
   "contributors": [
     "bluefox <dogafox@gmail.com>",
     "hobbyquaker <hobbyquaker@gmail.com>"
   ],
-  "homepage": "https://github.com/iobroker/iobroker.vis",
+  "homepage": "https://github.com/agav99/ioBroker.vis",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ioBroker/ioBroker.vis.git"

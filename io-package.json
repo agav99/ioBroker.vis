@@ -1,8 +1,20 @@
 {
     "common": {
         "name": "vis",
-        "version": "1.4.15",
+        "version": "1.4.20",
         "news": {
+            "1.4.20": {
+                "en": "https://docs.google.com/document/d/1QcCiCPw1iatF1OwmHHubZgoSk0LBiKz4r7s6PNzKD74/edit#",
+                "de": "https://docs.google.com/document/d/1QcCiCPw1iatF1OwmHHubZgoSk0LBiKz4r7s6PNzKD74/edit#",
+                "ru": "https://docs.google.com/document/d/1QcCiCPw1iatF1OwmHHubZgoSk0LBiKz4r7s6PNzKD74/edit#",
+                "pt": "https://docs.google.com/document/d/1QcCiCPw1iatF1OwmHHubZgoSk0LBiKz4r7s6PNzKD74/edit#",
+                "nl": "https://docs.google.com/document/d/1QcCiCPw1iatF1OwmHHubZgoSk0LBiKz4r7s6PNzKD74/edit#",
+                "fr": "https://docs.google.com/document/d/1QcCiCPw1iatF1OwmHHubZgoSk0LBiKz4r7s6PNzKD74/edit#",
+                "it": "https://docs.google.com/document/d/1QcCiCPw1iatF1OwmHHubZgoSk0LBiKz4r7s6PNzKD74/edit#",
+                "es": "https://docs.google.com/document/d/1QcCiCPw1iatF1OwmHHubZgoSk0LBiKz4r7s6PNzKD74/edit#",
+                "pl": "https://docs.google.com/document/d/1QcCiCPw1iatF1OwmHHubZgoSk0LBiKz4r7s6PNzKD74/edit#",
+                "zh-cn": "https://docs.google.com/document/d/1QcCiCPw1iatF1OwmHHubZgoSk0LBiKz4r7s6PNzKD74/edit#"
+  	    },
             "1.4.15": {
                 "en": "Better check of the offline license",
                 "de": "Bessere Überprüfung der Offline-Lizenz",
