@@ -14,20 +14,90 @@
  * (Free for non-commercial use).
  */
 
+/************************************************************** */
+// NOT used now
+function getAttributSufix(attrValue){
+    return "";
+    
+    if (!attrValue) return "";
+    
+    let p = attrValue.indexOf('|');
+    if (p>0)
+        return attrValue.substring(p);
+
+    return ""
+}
+function getAttributPrefix(attrValue){
+    return "";
+    if (!attrValue) return "";
+    let p = attrValue.indexOf('|');
+    if (p>0)
+        return attrValue.substring(0, p);
+    return attrValue
+}
+
+
+/************************************************************** */
+//Parse viewURI  format: viewModelId?Param1;Param2;...   оr only:  viewModelId
+function parseViewURI (viewURI){
+  let resViewName=viewURI;
+  let resViewParams=[];     
+  let resExName='';
+  
+  if (viewURI && (viewURI.indexOf('?')>0))
+   { let viewQ=viewURI.split('?');
+     resViewName=viewQ[0];
+     resViewParams=viewQ[1].split(';')
+     
+     if (resViewParams?.length>0)
+         resExName = resViewParams[0];
+
+     resExName = resExName.replace("?","_").replace(/\./g,"").replace(/;/g,"").replace(/javascript/g,"js");
+     if (resExName.length>0) resExName='_'+resExName;
+   }
+                                             //Example for: "PageA?Param1;Param2;"
+  return {viewModelId: resViewName,          //= "PageA"
+          params  : resViewParams,           //array = [Param1;Param2]
+          exName  : resExName,               //used to create unique DivID for Clons of View  = "_Param1"  (not contain forbidden chars)
+          viewURI : viewURI,                 //= "PageA?Param1;Param2;"
+          isClone : resExName.length>0,      //= true if URI has extra params
+          viewID  : resViewName + resExName  //= "PageA_Param1Param2"
+         }
+ }
+
+/************************************************************** */
 function replaceGroupAttr(inputStr, groupAttrList) {
     var newString = inputStr;
     var match = false;
-    var ms = inputStr.match(/(groupAttr\d+)+?/g);
+    var ms = inputStr.match(/(groupAttr\d+)+?/g); //get array, allmatching
     if (ms) {
-        match = true;
         ms.forEach(function (m) {
-            newString = newString.replace(/groupAttr(\d+)/, groupAttrList[m]);
+            if (m in groupAttrList){
+              newString = newString.replace(/groupAttr(\d+)/, groupAttrList[m]);
+              match = true;
+            }
         });
-        console.log('Replaced ' + inputStr + ' with ' + newString + ' (based on ' + ms + ')');
+        if (match) console.debug('     Replaced ' + inputStr + ' with ' + newString + ' (based on ' + ms + ')');
     }
     return {doesMatch: match, newString: newString};
 }
 
+/************************************************************** */
+// replace  "groupAttr" substring of  attribute value 'inputStr'  for child Widget of group  'groupId' 
+function checkForGroupAttr(vis, inputStr, groupId, viewModelId){
+    var resStr = inputStr;
+    if (groupId){
+        var aCount = parseInt(vis.views[viewModelId].widgets[groupId].data.attrCount, 10);
+        if (aCount) {
+            resStr = replaceGroupAttr(resStr, vis.views[viewModelId].widgets[groupId].data).newString;
+        }
+    }   
+    return resStr;
+}
+
+
+/************************************************************** */
+//Try find parent groupobj for widget (using project models info vis.viws[].windgets[]) 
 function getWidgetGroup(views, view, widget) {
     var widgets = views[view].widgets;
     var groupID = widgets[widget].groupid;
@@ -48,6 +118,40 @@ function getWidgetGroup(views, view, widget) {
     return null;
 }
 
+/***************************************************************/
+// get valuе of Obj property PropPath. PropPath is string like "Prop1" or "Prop1.Prop2" ...
+//Used for calculation "json" binding instruction
+function getObjPropValue(obj, PropPath){
+    if (!obj) return undefined;
+
+    let parts=PropPath.split('.');
+    for (let part of parts){
+     obj=obj[part];
+     if (!obj) return undefined;
+    }
+    return obj;
+ }
+
+
+
+//Format: {objectID1;operation1;operation2;...} ..{ }.. { }
+//examples:
+//  {objectRed.lc; date(hh:mm)} .. {h:height; w:width; Math.max(20, Math.sqrt(h*h + w*w))} ...
+//  "color={objectRed;/(100);*(255);HEX2}"
+//
+//Return array of object
+//   {visOid     - 'objectRed.val' 
+//    systemOid  - 'objectRed'
+//    token      - '{objectRed;/(100);*(255);HEX2}'
+//    operations[] - {op, arg[], formula}...
+//    format     - 'color={objectRed;/(100);*(255);HEX2}'
+//    isSeconds  - false
+//later next fields are added:  
+//    type - 'date'|'style'  
+//    attr - 
+//    view - 
+//    widget - 
+//  }
 function extractBinding(format) {
     var oid = format.match(/{(.+?)}/g);
     var result = null;
@@ -56,10 +160,12 @@ function extractBinding(format) {
             console.warn('Too many bindings in one widget: ' + oid.length + '[max = 50]');
         }
         for (var p = 0; p < oid.length && p < 50; p++) {
+            //Parsing one binding instruction {__;__;__;__;__}
             var _oid = oid[p].substring(1, oid[p].length - 1);
             if (_oid[0] === '{') continue;
             // If first symbol '"' => it is JSON
             if (_oid && _oid[0] === '"') continue;
+
             var parts = _oid.split(';');
             result = result || [];
             var systemOid = parts[0].trim();
@@ -83,7 +189,9 @@ function extractBinding(format) {
                 systemOid = systemOid.substring(0, systemOid.length - 3);
             }
             var operations = null;
-            var isEval = visOid.match(/^[\d\w_]+:\s?[-\d\w_.]+/) || (!visOid.length && parts.length > 0);//(visOid.indexOf(':') !== -1) && (visOid.indexOf('::') === -1);
+
+            //check for: {h:height;w:width;Math.max(20, Math.sqrt(h*h + w*w))}
+            var isEval = visOid.match(/^[\d\w_]+:\s?[-\d\w_.]+/) || (!visOid.length && parts.length > 0); //(visOid.indexOf(':') !== -1) && (visOid.indexOf('::') === -1);
 
             if (isEval) {
                 var xx = visOid.split(':', 2);
@@ -142,9 +250,32 @@ function extractBinding(format) {
                         }
                     }
                 } else {
-                    var parse = parts[u].match(/([\w\s\/+*-]+)(\(.+\))?/);
+
+                    function checkValueNumber(value){
+                        if (value === undefined) {
+                            return null
+                        } 
+                        else {
+                            value = (value || '').trim().replace(',', '.');
+                            
+                            if (value.indexOf('(')==0)  
+                                value = value.substring(1, value.length - 1);
+
+                            value = parseFloat(value.trim());
+
+                            if (value.toString() === 'NaN') {
+                                return null;
+                            } else {
+                                return value;
+                            }
+                        }
+                    }
+
+
+                    var parse = parts[u].match(/([\w\s\/+*-=<>!]+)(\(.+\))?/);  //Examples:  *(256); HEX2; date(hh:mm); array(value1,value2) 
                     if (parse && parse[1]) {
                         parse[1] = parse[1].trim();
+                       
                         // operators requires parameter
                         if (parse[1] === '*' ||
                             parse[1] === '+' ||
@@ -152,23 +283,18 @@ function extractBinding(format) {
                             parse[1] === '/' ||
                             parse[1] === '%' ||
                             parse[1] === 'min' ||
-                            parse[1] === 'max') {
-                            if (parse[2] === undefined) {
-                                console.log('Invalid format of format string: ' + format);
-                                parse[2] = null;
-                            } else {
-                                parse[2] = (parse[2] || '').trim().replace(',', '.');
-                                parse[2] = parse[2].substring(1, parse[2].length - 1);
-                                parse[2] = parseFloat(parse[2].trim());
+                            parse[1] === 'max' 
+                            ) {
+                                parse[2] = checkValueNumber(parse[2]); 
 
-                                if (parse[2].toString() === 'NaN') {
+                                if (parse[2] === null) {
                                     console.log('Invalid format of format string: ' + format);
-                                    parse[2] = null;
-                                } else {
-                                    operations = operations || [];
-                                    operations.push({op: parse[1], arg: parse[2]});
-                                }
-                            }
+                                } 
+                                else {
+                                        operations = operations || [];
+                                        operations.push({op: parse[1], arg: parse[2]});
+                                    }
+                            
                         } else
                         // date formatting
                         if (parse[1] === 'date' || parse[1] === 'momentDate' ) {
@@ -187,6 +313,41 @@ function extractBinding(format) {
                                 operations.push ({op: parse[1], arg: param}); //xxx
                             }
                         } else
+                        if (parse[1] === '=' ||
+                            parse[1] === '!=' ||
+                            parse[1] === '>' ||
+                            parse[1] === '<' ||
+                            parse[1] === '>=' ||
+                            parse[1] === '<=' ||
+                            parse[1] === 'bit' 
+                            ){
+                                param = (parse[2] || '').trim();
+                                param = param.substring(1, param.length - 1);
+                                param = param.split(',');
+                                if (Array.isArray(param) && param.length >= 2) {
+                                
+                                    param[0] = checkValueNumber(param[0]);
+
+                                    if (param[0] === null) {
+                                        console.log('Invalid format of format string: ' + format);
+                                    } else {
+                                        operations = operations || [];
+                                        operations.push({op: parse[1], arg: param});
+                                    }
+                                }
+                                else {
+                                    parse[2] = checkValueNumber(parse[2]); 
+
+                                    if (parse[2] === null) {
+                                        console.log('Invalid format of format string: ' + format);
+                                    } 
+                                    else {
+                                            operations = operations || [];
+                                            operations.push({op: parse[1], arg: parse[2]});
+                                        }
+                                }
+                        }
+                        else 
                         // value formatting
                         if (parse[1] === 'value') {
                             operations = operations || [];
@@ -214,6 +375,12 @@ function extractBinding(format) {
                                 }
                             }
                         } else
+                        if (parse[1] === 'json'){       //json(objPropPath)  ex: json(prop1);  json(prop1.propA)
+                            operations = operations || [];
+                            parse[2] = (parse[2] || '').trim();
+                            parse[2] = parse[2].substring(1, parse[2].length - 1);
+                            operations.push({op: parse[1], arg: parse[2]});
+                        }else
                         // operators without parameter
                         {
                             operations = operations || [];
@@ -238,22 +405,91 @@ function extractBinding(format) {
     return result;
 }
 
+//**********************************************************************************/
+//Helper  for finding Group of widget(wid) 
+//avoids repeated searches for a single widget (optimization)
+function GroupHelper(views){
+    this.views = views;
+    this.view = null;
+    this.wid = null;
+    this.groupwid = undefined; 
+    this.triedFound = false
+    
+    //reset props for new widget id 
+    this.initforWidget = function(view, wid){
+        this.view = view;
+        this.wid = wid;
+        this.groupwid = undefined;
+        this.triedFound = false;
+    }  
+
+    //getting GroupID for current widget. Fistr cheking local(saved) variable for optimization
+    this.tryGetGroupID = function(){
+        if ( !this.groupwid && !this.triedFound){
+            this.groupwid = getWidgetGroup(this.views, this.view, this.wid);
+            this.triedFound = true;
+            
+            if (this.groupwid)
+               this.views[this.view].widgets[this.wid].groupid = this.groupwid;                  
+         }
+
+    } 
+    //Checking widget attribute value for presence of "groupAttr". if so then replace to actual value
+    //If groupAttr Index wrone, then return "groupAttrN" -> "undefine"
+    this.checkValue = function(value) {
+        let result=value;
+
+        if (value.indexOf('groupAttr')>=0){
+        
+            this.tryGetGroupID();
+
+            //getting group attributes
+            if (this.groupwid && this.views[this.view].widgets[this.groupwid]) {                      //<<<<<< а тут в data только данные по groupAttr ?????
+                let res = replaceGroupAttr(value, this.views[this.view].widgets[this.groupwid].data); //Если индекс группы не найден то должен вернуть undefine
+                if (res.doesMatch) {
+                    result = res.newString;
+            }
+         }
+        }
+        else 
+        if (this.views[this.view].widgets[this.wid].grouped &&
+           !this.views[this.view].widgets[this.wid].groupid){
+            this.tryGetGroupID();
+           }
+
+        return result;
+    }
+}
+
+/************************************************************** */
 function getUsedObjectIDs(views, isByViews) {
     if (!views) {
         console.log('Check why views are not yet loaded!');
         return null;
     }
 
-    var _views = isByViews ? {} : null;
-    var IDs         = [];
-    var visibility  = {};
-    var bindings    = {};
-    var lastChanges = {};
-    var signals     = {};
+    var _views = isByViews ? {} : null;  //null for EditorMode.  After sets this object  to vis.subscribing.byViews{}[]->tagIDs  and for EditMode changing to {}
+                                         //Same as IDs[], but groupig by ViewName.
+                                         //tagID containing "ViewAttr№...." NOT beginning with "ViewName_"  because  already grouping by ViewName
+
+    var IDs         = [];                //=> vis.subscribing.IDs[]->tagIDs  for filling vis.states[]
+                                         //   cannt contain "GroupAttr№..."    
+                                         //   cannt contain "ViewAttr№...." because  its used for creating  item in vis.state array
+
+    var visibility  = {};                //=> vis.visibility{tagID}[] 
+                                         //    cannt contain "GroupAttr№..."
+                                         //      can contain "ViewAttr№...." beginning with "ViewName_". Need to createing clone item late in vis.clones.visibility 
+
+    var bindings    = {};                //=> vis.bindings{tagID}[]
+    var lastChanges = {};                //=> vis.lastChanges{tagID}[]
+    var signals     = {};                //=> vis.signals{tagID}[]
 
     var view;
     var id;
-    var sidd;
+    
+    //helper to optimize gettting(replacing) "groupAttr" for one widget
+    let groupHelper = new GroupHelper(views);
+
     for (view in views) {
         if (!views.hasOwnProperty(view)) continue;
 
@@ -261,96 +497,174 @@ function getUsedObjectIDs(views, isByViews) {
 
         if (_views) _views[view] = [];
 
+        //console.debug('loading view:'+ view)
         for (id in views[view].widgets) {
             if (!views[view].widgets.hasOwnProperty(id)) continue;
+           
+            //console.debug('   loading widget:'+ id)
+            widgetModel=views[view].widgets[id];
+          
             // Check all attributes
-            var data  = views[view].widgets[id].data;
-            var style = views[view].widgets[id].style;
-
+            var data  = widgetModel.data;
+            var style = widgetModel.style;
+            
+            {//Region for version compatibility
             // fix error in naming
-            if (views[view].widgets[id].groupped) {
-                views[view].widgets[id].grouped = true;
-                delete views[view].widgets[id].groupped;
+            if (widgetModel.groupped) {
+                widgetModel.grouped = true;
+                delete widgetModel.groupped;
             }
 
             // rename hqWidgets => hqwidgets
-            if (views[view].widgets[id].widgetSet === 'hqWidgets') {
-                views[view].widgets[id].widgetSet = 'hqwidgets';
+            if (widgetModel.widgetSet === 'hqWidgets') {
+                widgetModel.widgetSet = 'hqwidgets';
             }
 
             // rename RGraph => rgraph
-            if (views[view].widgets[id].widgetSet === 'RGraph') {
-                views[view].widgets[id].widgetSet = 'rgraph';
+            if (widgetModel.widgetSet === 'RGraph') {
+                widgetModel.widgetSet = 'rgraph';
             }
 
             // rename timeAndWeather => timeandweather
-            if (views[view].widgets[id].widgetSet === 'timeAndWeather') {
-                views[view].widgets[id].widgetSet = 'timeandweather';
+            if (widgetModel.widgetSet === 'timeAndWeather') {
+                widgetModel.widgetSet = 'timeandweather';
             }
 
             // convert "Show on Value" to HTML
-            if (views[view].widgets[id].tpl === 'tplShowValue') {
-                views[view].widgets[id].tpl = 'tplHtml';
-                views[view].widgets[id].data['visibility-oid'] = views[view].widgets[id].data.oid;
-                views[view].widgets[id].data['visibility-val'] = views[view].widgets[id].data.value;
-                delete views[view].widgets[id].data.oid;
-                delete views[view].widgets[id].data.value;
+            if (widgetModel.tpl === 'tplShowValue') {
+                widgetModel.tpl = 'tplHtml';
+                widgetModel.data['visibility-oid'] = widgetModel.data.oid;
+                widgetModel.data['visibility-val'] = widgetModel.data.value;
+                delete widgetModel.data.oid;
+                delete widgetModel.data.value;
             }
 
             // convert "Hide on >0/True" to HTML
-            if (views[view].widgets[id].tpl === 'tplHideTrue') {
-                views[view].widgets[id].tpl = 'tplHtml';
-                views[view].widgets[id].data['visibility-cond'] = '!=';
-                views[view].widgets[id].data['visibility-oid'] = views[view].widgets[id].data.oid;
-                views[view].widgets[id].data['visibility-val'] = true;
-                delete views[view].widgets[id].data.oid;
+            if (widgetModel.tpl === 'tplHideTrue') {
+                widgetModel.tpl = 'tplHtml';
+                widgetModel.data['visibility-cond'] = '!=';
+                widgetModel.data['visibility-oid'] = widgetModel.data.oid;
+                widgetModel.data['visibility-val'] = true;
+                delete widgetModel.data.oid;
             }
 
             // convert "Hide on 0/False" to HTML
-            if (views[view].widgets[id].tpl === 'tplHide') {
-                views[view].widgets[id].tpl = 'tplHtml';
-                views[view].widgets[id].data['visibility-cond'] = '!=';
-                views[view].widgets[id].data['visibility-oid'] = views[view].widgets[id].data.oid;
-                views[view].widgets[id].data['visibility-val'] = false;
-                delete views[view].widgets[id].data.oid;
+            if (widgetModel.tpl === 'tplHide') {
+                widgetModel.tpl = 'tplHtml';
+                widgetModel.data['visibility-cond'] = '!=';
+                widgetModel.data['visibility-oid'] = widgetModel.data.oid;
+                widgetModel.data['visibility-val'] = false;
+                delete widgetModel.data.oid;
             }
 
             // convert "Door/Window sensor" to HTML
-            if (views[view].widgets[id].tpl === 'tplHmWindow') {
-                views[view].widgets[id].tpl = 'tplValueBool';
-                views[view].widgets[id].data.html_false = views[view].widgets[id].data.html_closed;
-                views[view].widgets[id].data.html_true = views[view].widgets[id].data.html_open;
-                delete views[view].widgets[id].data.html_closed;
-                delete views[view].widgets[id].data.html_open;
+            if (widgetModel.tpl === 'tplHmWindow') {
+                widgetModel.tpl = 'tplValueBool';
+                widgetModel.data.html_false = widgetModel.data.html_closed;
+                widgetModel.data.html_true = widgetModel.data.html_open;
+                delete widgetModel.data.html_closed;
+                delete widgetModel.data.html_open;
             }
 
             // convert "Door/Window sensor" to HTML
-            if (views[view].widgets[id].tpl === 'tplHmWindowRotary') {
-                views[view].widgets[id].tpl = 'tplValueListHtml8';
-                views[view].widgets[id].data.count = 2;
-                views[view].widgets[id].data.value0 = views[view].widgets[id].data.html_closed;
-                views[view].widgets[id].data.value1 = views[view].widgets[id].data.html_open;
-                views[view].widgets[id].data.value2 = views[view].widgets[id].data.html_tilt;
-                delete views[view].widgets[id].data.html_closed;
-                delete views[view].widgets[id].data.html_open;
-                delete views[view].widgets[id].data.html_tilt;
+            if (widgetModel.tpl === 'tplHmWindowRotary') {
+                widgetModel.tpl = 'tplValueListHtml8';
+                widgetModel.data.count = 2;
+                widgetModel.data.value0 = widgetModel.data.html_closed;
+                widgetModel.data.value1 = widgetModel.data.html_open;
+                widgetModel.data.value2 = widgetModel.data.html_tilt;
+                delete widgetModel.data.html_closed;
+                delete widgetModel.data.html_open;
+                delete widgetModel.data.html_tilt;
             }
 
             // convert "tplBulbOnOff" to tplBulbOnOffCtrl
-            if (views[view].widgets[id].tpl === 'tplBulbOnOff') {
-                views[view].widgets[id].tpl = 'tplBulbOnOffCtrl';
-                views[view].widgets[id].data.readOnly = true;
+            if (widgetModel.tpl === 'tplBulbOnOff') {
+                widgetModel.tpl = 'tplBulbOnOffCtrl';
+                widgetModel.data.readOnly = true;
             }
 
             // convert "tplValueFloatBarVertical" to tplValueFloatBar
-            if (views[view].widgets[id].tpl === 'tplValueFloatBarVertical') {
-                views[view].widgets[id].tpl = 'tplValueFloatBar';
-                views[view].widgets[id].data.orientation = 'vertical';
+            if (widgetModel.tpl === 'tplValueFloatBarVertical') {
+                widgetModel.tpl = 'tplValueFloatBar';
+                widgetModel.data.orientation = 'vertical';
+            } 
+            }//region end
+            
+            //Begin handling next widget model
+            groupHelper.initforWidget(view, id);
+
+            //----------------------------------------------------------
+            //Check tagid for "viewAttr" and if contain make uniq tag (insert PageName at beginnig of the tagID)
+            //(for the convenience of differences when debuging)
+            function sub_Check_ViewAttr(tagid){
+              if (tagid.indexOf('viewAttr') >= 0)
+                   return view+'_'+tagid; //create uniq tag 
+              else return tagid
             }
 
+            //----------------------------------------------------------
+            //define common finction to adding to subscribing Arrays
+            function sub_AddtoSubscribingArray(tagid, bindObj=null){
+            
+                //if (tagid.indexOf('local_')===0) return;   //adding because "local_" need for getting it state  in subscribeStates method 
+                if (tagid.indexOf('groupAttr')===0) return;  //skip. we prevent subscribe  
+
+                if ((tagid.indexOf('viewAttr') < 0) &&    //skip. we prevent subscribe and creatig it state 
+                    (IDs.indexOf(tagid) === -1)
+                   ) IDs.push(tagid);                               
+                   
+                if (_views && _views[view].indexOf(tagid) === -1)
+                   _views[view].push(tagid);   
+
+                if (bindObj){
+                    tagid = sub_Check_ViewAttr(tagid);
+
+                    if (!bindings[tagid]) bindings[tagid] = [];
+                    bindings[tagid].push(bindObj);
+                }            
+            }    
+
+            //----------------------------------------------------------
+            //define common finction to check binging format
+            //(here  'attrValue' already checked for "groupAttr")
+            function sub_CheckBindingPresent(attrValue, attr, typeId) {
+                var res=false;
+                var oids = extractBinding(attrValue);
+
+                if (oids) {
+                    res=true;
+                    
+                    for (var t = 0; t < oids.length; t++) {
+                        var ssid = oids[t].systemOid;
+                        if (ssid) {
+                            oids[t].type = typeId;
+                            oids[t].attr = attr;
+                            oids[t].view = view;
+                            oids[t].widget = id;
+
+                            sub_AddtoSubscribingArray(ssid, oids[t]);
+                        }
+            
+                        if (oids[t].operations && oids[t].operations[0].arg instanceof Array) {
+                            for (var ww = 0; ww < oids[t].operations[0].arg.length; ww++) {
+                                let opssid = oids[t].operations[0].arg[ww].systemOid;
+                                if (opssid && opssid !== ssid) 
+                                    sub_AddtoSubscribingArray(opssid,oids[t]);
+                            }
+                        }
+                    }
+                }
+            
+             return res;
+            }
+
+            //check all widget attributes 
             for (var attr in data) {
                 if (!data.hasOwnProperty(attr) || !attr) continue;
                 /* TODO DO do not forget remove it after a while. Required for import from DashUI */
+                
+                { //region
                 if (attr === 'state_id') {
                     data.state_oid = data[attr];
                     delete data[attr];
@@ -406,152 +720,102 @@ function getUsedObjectIDs(views, isByViews) {
                     delete data[attr];
                     attr = 'woeid';
                 }
+                }//region end 
 
-                if (typeof data[attr] === 'string') {
-                    var m;
-                    var oids = extractBinding(data[attr]);
-                    if (oids) {
-                        for (var t = 0; t < oids.length; t++) {
-                            var ssid = oids[t].systemOid;
-                            if (ssid) {
-                                if (IDs.indexOf(ssid) === -1) IDs.push(ssid);
-                                if (_views && _views[view].indexOf(ssid) === -1) _views[view].push(ssid);
-                                if (!bindings[ssid]) bindings[ssid] = [];
-                                oids[t].type = 'data';
-                                oids[t].attr = attr;
-                                oids[t].view = view;
-                                oids[t].widget = id;
+                var attrValue = data[attr];
+                var savedValue = attrValue;
 
-                                bindings[ssid].push(oids[t]);
-                            }
+                if (typeof attrValue === 'string') {
+                  
+                    attrValue = groupHelper.checkValue(attrValue);  //Check attrValue for "groupAttr" and replace it
+                    attrValue = checkForViewAttr2(attrValue, data); //Check attrValue for "viewAttr" and if "data" contains "viewAttrN"  replace it
 
-                            if (oids[t].operations && oids[t].operations[0].arg instanceof Array) {
-                                for (var ww = 0; ww < oids[t].operations[0].arg.length; ww++) {
-                                    ssid = oids[t].operations[0].arg[ww].systemOid;
-                                    if (!ssid) continue;
-                                    if (IDs.indexOf(ssid) === -1) IDs.push(ssid);
-                                    if (_views && _views[view].indexOf(ssid) === -1) _views[view].push(ssid);
-                                    if (!bindings[ssid]) bindings[ssid] = [];
-                                    bindings[ssid].push(oids[t]);
-                                }
-                            }
+                    //try find {xxx} templates in string widget attribute       
+                    if (sub_CheckBindingPresent(attrValue, attr, 'data'))
+                    {
+                        //done. added to binding collections  
+                    }
+                    else
+                    //try check "oid" attributes  
+                    if (attr !== 'oidTrueValue'  && 
+                        attr !== 'oidFalseValue' && 
+                        attrValue &&
+                        (attr.match(/oid\d{0,2}$/) || attr.match(/^oid/) || attr.match(/^signals-oid-/) || attr === 'lc-oid')
+                       ){
+
+                        //Append tagID to subscribe array
+                        if (attrValue !== 'nothing_selected') {
+                            sub_AddtoSubscribingArray(attrValue);
+                            
+                            if (!vis.editMode &&(savedValue != attrValue)) //for run mode, if "groupAttr" changed to realTag 
+                                data[attr]=attrValue;
                         }
-                    } else
-                    if (attr !== 'oidTrueValue' && attr !== 'oidFalseValue' && ((attr.match(/oid\d{0,2}$/) || attr.match(/^oid/) || attr.match(/^signals-oid-/) || attr === 'lc-oid') && data[attr])) {
-                        if (data[attr] && data[attr] !== 'nothing_selected') {
-                            if (IDs.indexOf(data[attr]) === -1) {
-                                IDs.push(data[attr]);
-                            }
-                            if (_views && _views[view].indexOf(data[attr]) === -1) {
-                                _views[view].push(data[attr]);
-                            }
+                        
+                        //if contain "ViewAttr" appent prefix "PageName_" (for the convenience of differences when debuging)
+                        let tagid = sub_Check_ViewAttr(attrValue); 
+
+                        //filling Visibility binding array
+                        if (attr === 'visibility-oid') {
+                            if (!visibility[tagid]) visibility[tagid] = [];
+                            visibility[tagid].push({
+                                    view: view,
+                                    widget: id
+                            });
                         }
+                        else
+                        //filling  Signal binding array
+                        if (attr.match(/^signals-oid-/) ) {
+                            tagid = sub_Check_ViewAttr(attrValue);
 
-                        // Visibility binding
-                        if (attr === 'visibility-oid' && data['visibility-oid']) {
-                            var vid = data['visibility-oid'];
-                            var vgroup = getWidgetGroup(views, view, id);
-                            if (vgroup) {
-                                var result1 = replaceGroupAttr(vid, views[view].widgets[vgroup].data);
-                                if (result1.doesMatch) {
-                                    vid = result1.newString;
-                                }
-                            }
-
-                            if (!visibility[vid]) visibility[vid] = [];
-                            visibility[vid].push({view: view, widget: id});
-                        }
-
-                        // Signal binding
-                        if (attr.match(/^signals-oid-/) && data[attr]) {
-                            var sid = data[attr];
-                            var group = getWidgetGroup(views, view, id);
-                            if (group) {
-                                var result2 = replaceGroupAttr(sid, views[view].widgets[group].data);
-                                if (result2.doesMatch) {
-                                    sid = result2.newString;
-                                }
-                            }
-
-                            if (!signals[sid]) {
-                                signals[sid] = [];
-                            }
-                            signals[sid].push({
+                            if (!signals[tagid]) signals[tagid] = [];
+                            signals[tagid].push({
                                 view:   view,
                                 widget: id,
                                 index:  parseInt(attr.substring('signals-oid-'.length), 10)
                             });
                         }
+                        else
+                        //filling  lastChanges array
                         if (attr === 'lc-oid') {
-                            var lcsid = data[attr];
-                            var ggroup = getWidgetGroup(views, view, id);
-                            if (ggroup) {
-                                var result3 = replaceGroupAttr(lcsid, views[view].widgets[ggroup].data);
-                                if (result3.doesMatch) {
-                                    lcsid = result3.newString;
-                                }
-                            }
 
-                            if (!lastChanges[lcsid]) {
-                                lastChanges[lcsid] = [];
-                            }
-                            lastChanges[lcsid].push({
+                            tagid = sub_Check_ViewAttr(tagid);
+
+                            if (!lastChanges[tagid]) lastChanges[tagid] = [];
+                            lastChanges[tagid].push({
                                 view:   view,
                                 widget: id
                             });
                         }
-                    } else
-                    if ((m = attr.match(/^attrType(\d+)$/)) && data[attr] === 'id') {
-                        var _id = 'groupAttr' + m[1];
-                        if (data[_id]) {
-                            if (IDs.indexOf(data[_id]) === -1) {
-                                IDs.push(data[_id]);
-                            }
-                            if (_views && _views[view].indexOf(data[_id]) === -1) {
-                                _views[view].push(data[_id]);
-                            }
+                    } 
+                    else
+                    //try check "contains_view" attributes                          
+                    if (attrValue && (attr === 'contains_view')) {
+                        if (!vis.editMode &&(savedValue != attrValue)) //for run mode, if "groupAttr" changed to realTag
+                            data[attr]=attrValue;
+                    }
+                    else{
+                        var m;
+                        // attribute has type="id" (using for groups attr)
+                        if ((m = attr.match(/^attrType(\d+)$/)) && data[attr] === 'id') {
+                            var _id = 'groupAttr' + m[1];
+                            if (data[_id]) 
+                                sub_AddtoSubscribingArray(data[_id]);
                         }
                     }
                 }
-            }
+            } //.data
 
             // build bindings for styles
             if (style) {
                 for (var cssAttr in style) {
                     if (!style.hasOwnProperty(cssAttr) || !cssAttr) continue;
                     if (typeof style[cssAttr] === 'string') {
-                        var objIDs = extractBinding(style[cssAttr]);
-                        if (objIDs) {
-                            for (var tt = 0; tt < objIDs.length; tt++) {
-                                sidd = objIDs[tt].systemOid;
-                                if (sidd) {
-                                    if (IDs.indexOf(sidd) === -1) IDs.push(sidd);
-                                    if (_views && _views[view].indexOf(sidd) === -1) _views[view].push(sidd);
-                                    if (!bindings[sidd]) bindings[sidd] = [];
-
-                                    objIDs[tt].type = 'style';
-                                    objIDs[tt].attr = cssAttr;
-                                    objIDs[tt].view = view;
-                                    objIDs[tt].widget = id;
-
-                                    bindings[sidd].push(objIDs[tt]);
-                                }
-
-                                if (objIDs[tt].operations && objIDs[tt].operations[0].arg instanceof Array) {
-                                    for (var w = 0; w < objIDs[tt].operations[0].arg.length; w++) {
-                                        sidd = objIDs[tt].operations[0].arg[w].systemOid;
-                                        if (!sidd) continue;
-                                        if (IDs.indexOf(sidd) === -1) IDs.push(sidd);
-                                        if (_views && _views[view].indexOf(sidd) === -1) _views[view].push(sidd);
-                                        if (!bindings[sidd]) bindings[sidd] = [];
-                                        bindings[sidd].push(objIDs[tt]);
-                                    }
-                                }
-                            }
-                        }
+                       
+                        attrValue = groupHelper.checkValue(style[cssAttr]); //Check attrValue for "groupAttr" and replace it
+                        sub_CheckBindingPresent(attrValue, cssAttr,'style');
                     }
                 }
-            }
+            }//.style
         }
     }
 
@@ -567,19 +831,23 @@ function getUsedObjectIDs(views, isByViews) {
 
                 for (id in views[view].widgets) {
                     if (!views[view].widgets.hasOwnProperty(id)) continue;
+                    widgetModel=views[view].widgets[id];
 
                     // Add all OIDs from this view to parent
-                    if (views[view].widgets[id].tpl === 'tplContainerView' && views[view].widgets[id].data.contains_view) {
-                        var ids = _views[views[view].widgets[id].data.contains_view];
+                    if (widgetModel.tpl === 'tplContainerView' && widgetModel.data.contains_view) {     //ПРОВЕРИТЬ ЧТО ЭТО  <<<<<<<<<<<<<<<<<
+
+                        let viewInfo=parseViewURI(widgetModel.data.contains_view);
+                        var ids = _views[viewInfo.viewModelId];
                         if (ids) {
                             for (var a = 0; a < ids.length; a++) {
-                                if (ids[a] && _views[view].indexOf(ids[a]) === -1) {
-                                    _views[view].push(ids[a]);
+                                let varId =  ids[a];
+                                if (varId &&  (varId.indexOf("viewAttr") < 0) &&(_views[view].indexOf(varId) === -1)) {
+                                    _views[view].push(varId);
                                     changed = true;
                                 }
                             }
                         } else {
-                            console.warn('View does not exist: "' + views[view].widgets[id].data.contains_view + '"');
+                            console.warn('View does not exist: "' + widgetModel.data.contains_view + '"');
                         }
                     }
                 }
@@ -587,9 +855,73 @@ function getUsedObjectIDs(views, isByViews) {
         } while (changed);
     }
 
-    return {IDs: IDs, byViews: _views, visibility: visibility, bindings: bindings, lastChanges: lastChanges, signals: signals};
+    return {IDs: IDs, 
+            byViews: _views,
+            visibility: visibility,
+            bindings: bindings,
+            lastChanges: lastChanges, 
+            signals: signals
+        };
+
+ //Notice: All widgets attributes with binding instuctions will be changed to real values  in vis.createIds()
 }
 
+/**********************************************************************************/
 if (typeof module !== 'undefined' && module.parent) {
     module.exports.getUsedObjectIDs = getUsedObjectIDs;
 }
+
+/**********************************************************************************/
+//check all widget data/style attributes  in 'widgetModel' and 
+// - replace all "groupAttr to real value
+// - replace all "viewAttr to real value
+// calc all bindings and replace attribute value
+//
+//ONLY for EDITMODE when rendering widget! (for ordinary and cloning widget)
+//widgetModel  must be a copy of  vis.views[xx].widgets[xx]
+/**********************************************************************************/
+function updateWidgetModel(vis, widgetModel, groupId, widgetId, viewInfo) {
+    var data  = widgetModel.data;
+    var style = widgetModel.style;
+
+    //helper to optimize gettting(replacing) "groupAttr" for one widget
+    //let groupHelper = new GroupHelper(vis.views);
+    //groupHelper.initforWidget(viewInfo.viewModelId, undefined, groupId);
+
+    for (var attr in data) {
+        if (!data.hasOwnProperty(attr) || !attr) continue;
+        var attrValue = data[attr];
+        
+        if (typeof attrValue === 'string') {
+          
+            attrValue = checkForGroupAttr(vis, attrValue, groupId, viewInfo.viewModelId);
+            
+             //Check attrValue for "viewAttr" and replace it
+            if (viewInfo.isClone)
+                 attrValue = checkForViewAttr(attrValue, viewInfo)
+            else attrValue = checkForViewAttr2(attrValue, widgetModel.data);
+
+            data[attr] = vis.formatBinding(attrValue, viewInfo.viewID, widgetId, widgetModel)
+        }
+    }
+
+    for (var cssAttr in style) {
+        if (!style.hasOwnProperty(cssAttr) || !cssAttr) continue;
+        
+        var attrValue = style[cssAttr];
+        if (typeof attrValue === 'string') {
+
+            attrValue = checkForGroupAttr(vis, attrValue, groupId, viewInfo.viewModelId);
+            //Check attrValue for "viewAttr" and replace it
+            if (viewInfo.isClone)
+                attrValue = checkForViewAttr(attrValue, viewInfo) 
+            else attrValue = checkForViewAttr2(attrValue, widgetModel.data);
+
+            style[cssAttr] = vis.formatBinding(attrValue, viewInfo.viewID, widgetId, widgetModel)
+        }
+    }
+}
+
+
+
+ /**********************************************************************************/

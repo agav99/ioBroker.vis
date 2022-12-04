@@ -989,7 +989,7 @@ vis = $.extend(true, vis, {
         // oid
         this.addToInspect(this.activeWidgets, {name: 'lc-oid', type: 'id'},   group);
         // type (or timestamp)
-        this.addToInspect(this.activeWidgets, {name: 'lc-type', type: 'select', options: ['last-change', 'timestamp'], default: 'last-change'}, group);
+        this.addToInspect(this.activeWidgets, {name: 'lc-type', type: 'select', options: ['last-change', 'timestamp','value'], default: 'last-change'}, group);
         // is interval
         this.addToInspect(this.activeWidgets, {name: 'lc-is-interval', type: 'checkbox', default: true}, group);
         // is moment.js
@@ -2403,6 +2403,7 @@ vis = $.extend(true, vis, {
                 }
             }
             this.$selectActiveWidgets.val(this.activeWidgets);
+            this.updateWidgetInfo();
 
             // Enable disable buttons
             if (this.activeWidgets.length) {

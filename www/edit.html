@@ -60,6 +60,7 @@
     <script type="text/javascript" src="_socket/info.js"></script>
     <script type="text/javascript" src="js/conn.js"></script>
     <script type="text/javascript" src="js/visUtils.js"></script>
+    <script type="text/javascript" src="js/cloneHelper.js"></script>
     <script type="text/javascript" src="js/vis.js"></script>
     <script type="text/javascript" src="js/visEditWelcome.js"></script>
     <script type="text/javascript" src="js/visEdit.js"></script>
@@ -772,6 +773,14 @@
                 </li>
             </ul>
         </div>
+	<div><a id="goPrevView" class="viewNavigate" title="Selec  t prevXXXX"> << </a>  
+             <a id="goNextView" title="Select nextXXXX" class="viewNavigate"> >> </a>
+            CurrentView:<span id="activeViewName" class="infoPanel">_______</span> &nbsp;&nbsp;&nbsp;
+            Selected:<span id="infoSelecedCount">0</span> &nbsp;&nbsp;&nbsp;
+            Zoom:<span id="infoViewZoom">0</span>  &nbsp;&nbsp;&nbsp;
+            Position:<span id="infoPos">0;0</span> &nbsp;&nbsp;&nbsp;
+            Size:<span id="infoSize">0</span> 
+        </div>
     </div>
     <div id="attr_wrap">
         <div id="pan_attr">
@@ -986,6 +995,8 @@
                         </tr>
                         </tbody>
                     </table>
+                </div>
+		<div><p>Масштаб:<input type="range" id="viewZoom"  min="1" max="5" value="1" step="0.1"><b><span id="vieZoomInfo">1.0</span></b></p>
                 </div>
             </div>
             <div class="tab_attr ui-widget-content" id="tab_wid_attr">

@@ -273,7 +273,11 @@ if (typeof systemLang !== 'undefined' && typeof cordova === 'undefined') {
     systemLang = visConfig.language || systemLang;
 }
 
-var FORBIDDEN_CHARS = /[^._\-/ :!#$%&()+=@^{}|~]+/g; // from https://github.com/ioBroker/ioBroker.js-controller/blob/master/packages/common/lib/common/tools.js
+//used for subscribeOidAtRuntime. 
+// Oid value allows the format: "any.00.____"   or  "any.any.any.00.___"    So we need allow dot "." 
+
+var FORBIDDEN_CHARS = /[_\-/ :!#$%&()+=@^{}|~]+/g; // from https://github.com/ioBroker/ioBroker.j-controller/blob/master/packages/common/lib/common/tools.js
+//var FORBIDDEN_CHARS = /[^._\-/ :!#$%&()+=@^{}|~]+/g; // from https://github.com/ioBroker/ioBroker.js-controller/blob/master/packages/common/lib/common/tools.js
 // var FORBIDDEN_CHARS = /[^._\-/ :!#$%&()+=@^{}|~\p{Ll}\p{Lu}\p{Nd}]+/gu; // it must be like this, but old browsers does not support Unicode
 
 var vis = {
@@ -288,7 +292,7 @@ var vis = {
     urlParams:          {},
     settings:           {},
     views:              null,
-    widgets:            {},
+    widgets:            {}, // collection of instanced widgets  
     activeView:         '',
     activeViewDiv:      '',
     widgetSets:         visConfig.widgetSets,
@@ -308,31 +312,45 @@ var vis = {
     language:           (typeof systemLang !== 'undefined') ? systemLang : visConfig.language,
     statesDebounce:     {},
     statesDebounceTime: 1000,
+   
+    //
     visibility:         {},
     signals:            {},
     lastChanges:        {},
     bindings:           {},
-    bindingsCache:      {},
-    subscribing:        {
+
+    clones:{                   //additional collections for CloneView. Updates when renderWidget and Destroy wigdet
+        subscribeByViews:{},   // clones.subscribeByViews[ClonePageUnicID][viewAttr№.tag] = realTagId
+          visibility:{},         // clones.visibility[realTagId]=Obj 
+             signals:{},         // ... 
+         lastChanges:{},         // 
+       bindingsByTag:{},          // clones.bindings[realTagId]=bindObj
+    bindingsByWidget:{}
+
+    },
+    bindingsCache:  {},
+    
+    subscribing:{
         IDs:         [],
         byViews:     {},
-        active:      [],
+        active:      [], //string array for saving tag names
+        activeLinkCount: [], //int array for saving LinkCount of corresponding active tag name. ( full symmetrical for  "Active" array) 
         activeViews: []
     },
+
     commonStyle:        null,
     debounceInterval:   700,
     user:               '',   // logged in user
     loginRequired:      false,
     sound:              /^((?!chrome|android).)*safari/i.test(window.navigator.userAgent) ? $('<audio id="external_sound" autoplay muted></audio>').appendTo('body') : null,
+
+    //******************************************************************************* */
     _setValue:          function (id, state, isJustCreated) {
         var that = this;
         var oldValue = this.states.attr(id + '.val');
 
-        // If ID starts from 'local_', do not send changes to the server, we assume that it is a local variable of the client
-        if (id.indexOf('local_') === 0) {
-            that.states.attr(state);
-
-            // Inform other widgets, that does not support canJS
+        // Inform other widgets, that does not support canJS
+        function sub_UpdateWidgetsNotCanJS(){
             for (var i = 0, len = that.onChangeCallbacks.length; i < len; i++) {
                 try {
                     that.onChangeCallbacks[i].callback(that.onChangeCallbacks[i].arg, id, state);
@@ -340,6 +358,18 @@ var vis = {
                     that.conn.logError('Error: can\'t update states object for ' + id + '(' + e + '): ' + JSON.stringify(e.stack));
                 }
             }
+        }
+
+        // If ID starts from 'local_', do not send changes to the server, we assume that it is a local variable of the client
+        if (id.indexOf('local_') === 0) {
+            that.states.attr(state);
+
+            // Inform other widgets, that does not support canJS
+            sub_UpdateWidgetsNotCanJS();
+
+            //need update string to number
+            state.ts=Date.now();
+            state.lc=state.ts;
 
             // update local variable state -> needed for binding, etc.
             vis.updateState(id, state);
@@ -374,16 +404,11 @@ var vis = {
                 }
 
                 // Inform other widgets, that does not support canJS
-                for (var i = 0, len = that.onChangeCallbacks.length; i < len; i++) {
-                    try {
-                        that.onChangeCallbacks[i].callback(that.onChangeCallbacks[i].arg, id, state);
-                    } catch (e) {
-                        that.conn.logError('Error: can\'t update states object for ' + id + '(' + e + '): ' + JSON.stringify(e.stack));
-                    }
-                }
+                sub_UpdateWidgetsNotCanJS();
             }
         });
     },
+    //******************************************************************************* */
     setValue:           function (id, val) {
         if (!id) {
             console.log('ID is null for val=' + val);
@@ -412,8 +437,11 @@ var vis = {
 
         var that = this;
 
+        //blocking a frequent call  of  "set" method  for one var (id)
+        //Max Freq = 1sec (statesDebounceTime)
+
         // if no de-bounce running
-        if (!this.statesDebounce[id]) {
+        if (!this.statesDebounce[id]) { 
             // send control command
             this._setValue(id, o, created);
             // Start timeout
@@ -431,6 +459,7 @@ var vis = {
             this.statesDebounce[id].state = o;
         }
     },
+
     loadWidgetSet:      function (name, callback) {
         var url = './widgets/' + name + '.html?visVersion=' + this.version;
         var that = this;
@@ -729,6 +758,7 @@ var vis = {
                     containers.push({view: view});
                 }
             }
+
             if (containers.length) {
                 cnt++;
                 this.renderViews(that.activeViewDiv, containers, function () {
@@ -791,34 +821,86 @@ var vis = {
         }
         $view.css({width: width, height: height});
     },
-    updateContainers:   function (viewDiv, view) {
+
+    /**********************************************************************/
+    updateContainers:   function (viewDiv, view, onlyContainerWidgetId=undefined) {
         var that = this;
-        // Set ths views for containers
+
+        //Getting all vis "vis-view-container" for view "viewDiv"
         $('#visview_' + viewDiv).find('.vis-view-container').each(function () {
+
+            //get parent widget  element
+            let $containerWidget = $(this).parent().closest('.vis-widget');
+            let containerWidgetID = $containerWidget  &&  $containerWidget.attr('id') ;
+            
+            //Filter by onlyContainerWidgetId
+            if (onlyContainerWidgetId && 
+                (containerWidgetID != onlyContainerWidgetId)
+                )
+                return;
+
             var cview = $(this).attr('data-vis-contains');
+            let viewInfo=vis.parseViewURI(cview);
+            cview = viewInfo.viewModelId;
+        
             if (!that.views[cview]) {
                 $(this).html('<span style="color: red" class="container-error">' + _('error: view not found.') + '</span>');
-            } else if (cview === view || cview === viewDiv) {
+            } else 
+            if (cview === view || cview === viewDiv) {
                 $(this).html('<span style="color: red" class="container-error">' + _('error: view container recursion.') + '</span>');
             } else {
                 if ($(this).find('.container-error').length) {
                     $(this).html('');
                 }
-                var targetView = this;
+                var
+                 targetView = this;
                 if (!$(this).find('.vis-widget:first').length) {
-                    that.renderView(cview, cview, function (_viewDiv) {
-                        $('#visview_' + _viewDiv)
-                            .appendTo(targetView)
-                            .show();
-                    });
+                    that.renderView(cview, viewInfo.viewURI, 
+                                    true, 
+                                    function (_viewDiv) {
+                                    $('#visview_' + _viewDiv)
+                                        .appendTo(targetView)
+                                        .show();
+                                    },
+                                    containerWidgetID
+                    );
                 } else {
-                    $('#visview_' + cview)
+                    $('#visview_' + viewInfo.viewID)
                         .appendTo(targetView)
                         .show();
                 }
             }
         });
     },
+   
+    /**********************************************************************/
+    //Parse viewURI  format: viewModelId?Param1;Param2;...   оr only:  viewModelId
+    //
+    parseViewURI:function (viewURI)
+    {
+        return parseViewURI(viewURI); //from visUtils.js 
+    },
+
+    /**********************************************************************/
+    //If CloneView has Container widget, need to append parentViewUri.Params to childViewURI 
+    // to make it unique
+    appendViewParams: function(childViewURI, parentViewUri){
+       let res = childViewURI;
+       if (parentViewUri.isClone){
+
+        childViewURI = childViewURI.trim();
+        if (res.indexOf('?') < 0) res=res+'?' 
+        else 
+        if (res.length>0  &&  res[res.length-1]!=';') res=res+';';
+        res=res + parentViewUri.params.join(';');
+       }
+        return res;
+    }, 
+
+    /**********************************************************************/
+    // callback - then finish
+    // viewDiv - only for passing to callback
+    // views - collection 
     renderViews:        function (viewDiv, views, index, callback) {
         if (typeof index === 'function') {
             callback = index;
@@ -831,25 +913,53 @@ var vis = {
         }
         var item = views[index];
         var that = this;
-        this.renderView(this.views[item.view] ? item.view : viewDiv, item.view, true, function () {
-            that.renderViews(viewDiv, views, index + 1, callback);
-        });
+
+        let viewInfo=vis.parseViewURI(item.view);
+
+        this.renderView(this.views[viewInfo.viewModelId] ? viewInfo.viewModelId : viewDiv, //-> viewDiv
+                       item.view,                                                          //-> view             
+                       true,                                                               //-> hidden             
+                       function () {                                                       //-> callback
+                            that.renderViews(viewDiv, views, index + 1, callback);
+                       },
+                       item.parentContainerWidgetId                                        //-> parentContainerWidgetModelId
+                       );
     },
-    renderView:         function (viewDiv, view, hidden, callback) {
+
+    /**********************************************************************/
+    // view - (name of view model) now can be supplemented of ExParams in format: view?Param1;Param2;...
+    // this ExParams can be used for calculate full tagID.
+    // For one view and different ExParams we create new view instance - Clone, and in this case,
+    // "view" can consider as TEMPLATE of view 
+    //Ex:
+    // loading Page: viewDiv=PageA, view=PageA, hidden=false, callback=xxx
+    // editing group:  viewDiv=g0002, view=PageA, hidden=true, callback=xxx
+    // view in container: viewDiv=PageC, view=PageC?Param1, hidden=true, callback=xxx
+    //    inside function:  view=PageC  viewDiv=PageC_Param1
+    // 
+    // viewDiv - used for new elementID
+    // parentContainerWidgetId -  container widget element ID
+    /**********************************************************************/
+    renderView:         function (viewDiv, view, hidden, callback, parentContainerWidgetId=undefined) {
         var that = this;
 
         if (typeof hidden === 'function') {
             callback = hidden;
-            hidden = undefined;
+            //hidden = undefined;
+            hidden = true;  //agav: Иначе в EditMode промаргивает ContainetView  при reRenderWidget при измеении свойства в инспекторе
         }
+
         if (typeof view === 'boolean') {
             callback = hidden;
             hidden   = undefined;
             view     = viewDiv;
         }
 
-        viewDiv = decodeURIComponent(viewDiv);
-        view = decodeURIComponent(view);
+        //view can contain ExParams (view?Param1;Param2;...)
+        let viewInfo=this.parseViewURI(view);
+        
+        view = decodeURIComponent(viewInfo.viewModelId);
+        viewDiv = decodeURIComponent(viewDiv + viewInfo.exName); //join with Params to have unique ViewClone name
 
         if (!this.editMode && !$('#commonTheme').length) {
             $('head').prepend('<link rel="stylesheet" type="text/css" href="' + ((typeof app === 'undefined') ? '../../' : '') + 'lib/css/themes/jquery-ui/' + (this.calcCommonStyle() || 'redmond') + '/jquery-ui.min.css" id="commonTheme"/>');
@@ -865,11 +975,11 @@ var vis = {
             return false;
         }
 
+        console.debug('render View:' + viewInfo.viewID);
+
         // try to render background
-
-
         // collect all IDs, used in this view and in containers
-        this.subscribeStates(view, function () {
+        this.subscribeStates(viewInfo, function () {
             var isViewsConverted = false; // Widgets in the views hav no information which WidgetSet they use, this info must be added and this flag says if that happens to store the views
 
             that.views[view].settings.theme = that.views[view].settings.theme || 'redmond';
@@ -900,10 +1010,13 @@ var vis = {
                     }
                 }
             }
+
+            //View not founded - appending
             if (!$view.length) {
                 $('#vis_container').append('<div style="display: none;" id="visview_' + viewDiv + '" ' +
-                    'data-view="' + view + '" ' +
-                    'class="vis-view ' + (viewDiv !== view ? 'vis-edit-group' : '') + '" ' +
+                    'data-view="' + view + '" ' +                               //model View Name
+                    'data-vis-contains="'+ viewInfo.viewURI+'" ' +         //
+                    'class="vis-view ' + ((viewDiv !== view)&& (!viewInfo.isClone)? 'vis-edit-group' : '') + '" ' +
                     (that.views[view].settings.alwaysRender ? 'data-persistent="true"' : '') + '>' +
                     '<div class="vis-view-disabled" style="display: none"></div>' +
                     '</div>');
@@ -918,21 +1031,26 @@ var vis = {
                 }
 
                 var id;
-                if (viewDiv !== view && that.editMode) {
+                
+                if (viewDiv !== view && that.editMode && !viewInfo.isClone) {
+                    //Show view as Group editor    
+
                     //noinspection JSJQueryEfficiency
                     var $widget = $('#' + viewDiv);
                     if (!$widget.length) {
                         that.renderWidget(view, view, viewDiv);
                         $widget = $('#' + viewDiv);
                     }
-                    $view.append('<div class="group-edit-header" data-view="' + viewDiv + '">' + _('Edit group:') + ' <b>' + viewDiv + '</b><button class="group-edit-close"></button></div>');
-                    $view.find('.group-edit-close').button({
+                    //change to Parent because may be zooming  "vis-view vis-edit-group"
+                    $view.parent().append('<div class="group-edit-header" data-view="' + viewDiv + '">' + _('Edit group:') + ' <b>' + viewDiv + '</b><button class="group-edit-close"></button></div>');
+                    $view.parent().find('.group-edit-close').button({
                         icons: {
                             primary: 'ui-icon-close'
                         },
                         text: false
                     }).data('view', view).css({width: 20, height: 20}).click(function () {
                         var view = $(this).data('view');
+                        $('.group-edit-header').remove();
                         that.changeView(view, view);
                     });
 
@@ -960,7 +1078,7 @@ var vis = {
                         }
 
                         if (!that.views[view].widgets[id].renderVisible && !that.views[view].widgets[id].grouped) {
-                            that.renderWidget(viewDiv, view, id);
+                            that.renderWidget(viewDiv, viewInfo, id, 0, true, parentContainerWidgetId);
                         }
                     }
                 }
@@ -976,7 +1094,20 @@ var vis = {
             // move views in container
             var containers = [];
             $view.find('.vis-view-container').each(function () {
+                
+
+                //getting parent container widget Id
+                let $containerWidget = $(this).parent().closest('.vis-widget');
+                let containerWidgetID = $containerWidget  &&  $containerWidget.attr('id') ;
+                
                 var cview = $(this).attr('data-vis-contains');
+                
+                if (viewInfo.isClone)
+                    cview = that.appendViewParams(cview, viewInfo);
+               
+                let childviewInfo=vis.parseViewURI(cview);
+                cview = childviewInfo.viewModelId;
+                        
                 if (!that.views[cview]) {
                     $(this).append('error: view not found.');
                     return false;
@@ -984,18 +1115,25 @@ var vis = {
                     $(this).append('error: view container recursion.');
                     return false;
                 }
-                containers.push({thisView: this, view: cview});
+                containers.push({thisView: this,                 //vis-view-container (only For callback)
+                                 view:     childviewInfo.viewURI,
+                                 viewID:   childviewInfo.viewID,    //(only For callback)
+                                 parentContainerWidgetId: containerWidgetID //its not modelID, its div Id
+                                });
             });
+
             // add view class
             if (that.views[view].settings['class']) {
                 $view.addClass(that.views[view].settings['class'])
             }
+
             var wait = false;
             if (containers.length) {
                 wait = true;
-                that.renderViews(viewDiv, containers, function (_viewDiv, _containers) {
+                that.renderViews(viewDiv, containers, 0, function (_viewDiv, _containers) {
+                    //callindg aftre process all containers on View _viewDiv
                     for (var c = 0; c < _containers.length; c++) {
-                        $('#visview_' + _containers[c].view)
+                        $('#visview_' + _containers[c].viewID)
                             .appendTo(_containers[c].thisView)
                             .show();
                     }
@@ -1072,20 +1210,56 @@ var vis = {
             this.preloadImages.cache.push(img);
         }
     },
-    destroyWidget:      function (viewDiv, view, widget) {
-        var $widget = $('#' + widget);
-        if ($widget.length) {
-            var widgets = this.views[view].widgets[widget].data.members;
 
-            if (widgets) {
-                for (var w = 0; w < widgets.length; w++) {
-                    if (widgets[w] !== widget) {
-                        this.destroyWidget(viewDiv, view, widgets[w]);
-                    } else {
-                        console.warn('Cyclic structure in ' + widget + '!');
-                    }
-                }
+
+        //viewDiv - 'vis-view' ID without  prefix "visview_"  (ie PageA,  PageA_ClonePrefix)
+    //view - viewURI (ie PageA,  PageA?ClonePrefix;xxx...)
+
+    /**************************************************************/
+    // viewDiv - not used now, it's 'vis-view' ID without  prefix "visview_"  (ie PageA,  PageA_ClonePrefix)
+    // view - not used now, it's   model viewName
+    // widget - actual widgetid (can contain ExName for clone) 
+    // needUpdateCloneAnimateInfo - TRUE only for "destroyView" call
+    //                              FALSE for  "reRenderWidget" call to prevent useless clearing CloneAnimateInfo collections
+    destroyWidget:      function (viewDiv, view, widget, needUpdateCloneAnimateInfo=false) {
+
+        //widget can contain widgetModelName and ExName (to have unique wid for cloneView)
+        var $widget = $('#' + widget);
+        
+
+        if ($widget.length) {
+            var that = this;
+            
+            console.debug('  destroy widget: ' + widget + ' on '+viewDiv);
+
+            var $subContainers = $widget.find('.vis-view');  
+            $subContainers.each(function () {
+                var $this = $(this);            //View or CloneView
+                let viewURI=$this.attr('data-vis-contains')||$this.attr('data-view'); 
+                let viewDiv=$this.attr('id').substring('visview_'.length);;
+                  
+                that.destroyView(viewDiv, viewURI);
+                //let viewURI= $(this).attr('data-vis-contains') || $(this).attr('data-view'); 
+            });
+
+            if ($widget.attr('id')[0]==='g'){ //widget is group
+                $widget.find('> .vis-widget').each(function () {
+                    that.destroyWidget(viewDiv, view, $(this).attr('id'));
+                 });
             }
+
+            if (needUpdateCloneAnimateInfo || this.editMode){
+                //if it's Clone Widget need to clear all clone animation colections
+                let isClone = this.widgets[widget] && this.widgets[widget].isClone;  //$widget.attr('data-widget-isclone');
+                if (isClone){
+                    console.debug('  clone_clearWidgetAnimateInfo');
+                    clone_clearWidgetAnimateInfo(this,widget);
+                }
+                
+                this.widgets[widget] = undefined;  
+            }
+            
+            //delete this.widgets[widget];  //not remove for optimization
 
             try {
                 // get array of bound OIDs
@@ -1102,6 +1276,7 @@ var vis = {
                     $widget.data('bindHandler', null);
                     $widget.data('bound', null);
                 }
+
                 // If destroy function exists => destroy it
                 var destroy = $widget.data('destroy');
                 if (typeof destroy === 'function') {
@@ -1112,19 +1287,54 @@ var vis = {
             }
         }
     },
-    reRenderWidget:     function (viewDiv, view, widget) {
-        var $widget = $('#' + widget);
+    
+    //******************************************************************* */
+    //calling from:
+    //  updateState->binding  
+    //  editor
+    //
+    //viewDiv, view, widget - can contain ExName  for CloneView
+    reRenderWidget:     function (viewDiv, view, widgetId) {
+        var $widget = $('#' + widgetId);
         var updateContainers = $widget.find('.vis-view-container').length;
         view    = view    || this.activeView;
         viewDiv = viewDiv || this.activeViewDiv;
 
-        this.destroyWidget(viewDiv, view, widget);
-        this.renderWidget(viewDiv, view, widget, !this.views[viewDiv] && viewDiv !== widget ?
-            viewDiv :
-            (vis.views[view].widgets[widget].groupid ? vis.views[view].widgets[widget].groupid : null));
+        let viewInfo=this.parseViewURI(view); 
+        if (viewDiv==view && viewInfo.isClone)
+           viewDiv=viewInfo.viewID;
+        
+        console.debug('reRenderWidget start widget:' + widgetId + ' on:'+viewInfo.viewID);
 
-        updateContainers && this.updateContainers(viewDiv, view);
+        this.destroyWidget(viewDiv, view, widgetId); //viewDiv, view - not used there now
+
+        let groupId;
+        let modelWid = undefined;
+        let parentContainerWidgetId = undefined;
+
+        if (this.widgets[widgetId]){                         
+              groupId = this.widgets[widgetId].groupid || null;
+              modelWid = this.widgets[widgetId].wid || widgetId; //get widget modelId
+              parentContainerWidgetId = this.widgets[widgetId].parentContainerWidgetId;
+        }
+        else 
+        {   modelWid = widgetId;
+            groupId = (!viewInfo.isClone && vis.views[view].widgets[modelWid].groupid) ? vis.views[view].widgets[modelWid].groupid : null;
+        }
+
+        this.renderWidget(viewDiv, view, 
+                          modelWid, 
+                          !viewInfo.isClone && !this.views[viewDiv] && viewDiv !== modelWid ? viewDiv : groupId,
+                          parentContainerWidgetId 
+                          );
+
+        updateContainers && this.updateContainers(viewDiv, view, widgetId);  
+
+        console.debug('reRenderWidget done widget:' + widgetId + ' on:'+viewInfo.viewID);
     },
+
+    //******************************************************************* */
+    //view - always null
     changeFilter:       function (view, filter, showEffect, showDuration, hideEffect, hideDuration) {
         view = view || this.activeView;
         // convert from old style
@@ -1261,9 +1471,10 @@ var vis = {
         }
     },
     isSignalVisible:    function (view, widget, index, val, widgetData) {
-        widgetData = widgetData || this.views[view].widgets[widget].data;
+        widgetData = widgetData || (this.widgets[widget]?.data) ;
+        //widgetData = widgetData || this.views[view].widgets[widget].data;
+        
         var oid = widgetData['signals-oid-' + index];
-
         if (oid) {
             if (val === undefined || val === null) {
                 val = this.states.attr(oid + '.val');
@@ -1513,6 +1724,7 @@ var vis = {
             }
         });
     },
+    /***********************************************************************************/
     addLastChange:      function (view, wid, data) {
         // show last change
         var border = (parseInt(data['lc-border-radius'], 10) || 0) + 'px';
@@ -1580,9 +1792,21 @@ var vis = {
         } else if (data['lc-position-horz'] === 'middle') {
             css.left = 'calc(50% + ' + offset + 'px)';
         }
-        var text = '<div class="vis-last-change" data-type="' + data['lc-type'] + '" data-format="' + data['lc-format'] + '" data-interval="' + data['lc-is-interval'] + '">' + this.binds.basic.formatDate(this.states.attr(data['lc-oid'] + '.' + (data['lc-type'] === 'last-change' ? 'lc' : 'ts')), data['lc-format'], data['lc-is-interval'], data['lc-is-moment']) + '</div>';
+
+        let timeValue = "";
+        if (data['lc-type'] === 'value'){
+         timeValue =  this.states.attr(data['lc-oid']+'.val');
+        }
+        else 
+         timeValue =  this.binds.basic.formatDate(this.states.attr(data['lc-oid'] + '.' + (data['lc-type'] === 'last-change' ? 'lc' : 'ts')), 
+                                                    data['lc-format'], 
+                                                    data['lc-is-interval'], 
+                                                    data['lc-is-moment']);
+
+        var text = '<div class="vis-last-change" data-type="' + data['lc-type'] + '" data-format="' + data['lc-format'] + '" data-interval="' + data['lc-is-interval'] + '">' + timeValue + '</div>';
         $('#' + wid).prepend($(text).css(css)).css('overflow', 'visible');
     },
+    /***********************************************************************************/
     isUserMemberOf:     function (user, userGroups) {
         if (!this.userGroups) {
             return true;
@@ -1599,9 +1823,40 @@ var vis = {
         }
         return false;
     },
-    renderWidget:       function (viewDiv, view, id, groupId) {
+
+/***********************************************************************************/
+    getViewURI: function(widgetData){
+
+        let viewURI = widgetData.attr('contains_view'); 
+
+        //Если contains_view не содержит параметров "?xxx;xxx" и хотябы параметр "viewAttr1" контерйнера
+        //определен, то изменяем "contains_view"
+        //Проверка на viewAttr0 добавлена тк иначе все внутренние виджеты контейнеров будут иметь составное ID = WidgetID+ContainerID 
+        //а это может сломать совместимость со старыми проектами, если ID использовалось в JS скрипте кадра 
+        if (viewURI && (viewURI.indexOf('?')<=0) && widgetData["viewAttr1"]){
+            viewURI=viewURI+'?'+widgetData.attr('wid')+';';
+
+            let attrCount = widgetData.count;
+            for (let i = 1; i <= attrCount; i++) {
+                viewURI = viewURI + widgetData["viewAttr"+i];
+                if (i < attrCount) viewURI = viewURI + ';';
+            }
+        }    
+        return viewURI;
+    },
+    /***********************************************************************************/
+    // viewDiv - ID of view Instance. can contain ExName (for View Clones)
+    // view - view (str)  or viewInfo (obj) or ViewURI(str)
+    // id - widget model name (w000001)
+    // needUpdateCloneAnimateInfo - bool flag to indicate the need fill CloneAnimateInfo colleactions
+    //                            = TRUE from RenderView  call
+    //                            = FALSE when rerender Widget
+    // groupId - group widgetId (define when recursive render of group members or RerenderWidget)
+    /***********************************************************************************/
+    renderWidget:       function (viewDiv, view, id, groupId, needUpdateCloneAnimateInfo=false, parentContainerWidgetId=undefined) {
         var $view;
         var that = this;
+
         if (!groupId) {
             $view = $('#visview_' + viewDiv);
         } else {
@@ -1610,25 +1865,118 @@ var vis = {
         if (!$view.length) {
             return;
         }
-
-        var widget = this.views[view].widgets[id];
-
-        if (groupId && widget) {
-            widget = JSON.parse(JSON.stringify(widget));
-            var aCount = parseInt(this.views[view].widgets[groupId].data.attrCount, 10);
-            if (aCount) {
-                $.map(widget.data, function (val, key) {
-                    if (typeof val === 'string') {
-                        var result = replaceGroupAttr(val, that.views[view].widgets[groupId].data);
-                        if (result.doesMatch) {
-                            widget.data[key] = result.newString || '';
-                        }
-                    }
-                });
-            }
+   
+        let viewInfo={};
+        if (typeof view === 'object') 
+             viewInfo=view;
+        else viewInfo=this.parseViewURI(view); 
+        view = viewInfo.viewModelId; //get model View name  
+        
+        var widget = this.views[view].widgets[id]; //get widget model object from project data
+        if (!widget){
+            console.error('cannt get widget model:'+id+' on view:'+view);
+            return;
         }
 
-        var isRelative = widget && widget.style && (widget.style.position === 'relative' || widget.style.position === 'static' || widget.style.position === 'sticky');
+        let modelwid=id;           //save value, need it later 
+        id = id + viewInfo.exName; //to make unique wid if we have cloned view
+
+        console.debug((viewInfo.isClone?'  ':'')+'render widget:'+id+'   on: '+viewInfo.viewID);
+
+        //try get savedWidgetInfo    
+        var savedWidgetInfo = this.widgets[id];  //can be undefine 
+        let widgetModelforClone = undefined; 
+
+        if (this.editMode)
+        {
+            //make a copy of widget model to replace groupAttr/viewAttr/binding instruction 
+            widget = JSON.parse(JSON.stringify(widget)); //make copy
+            updateWidgetModel(this, widget, groupId, id, viewInfo); 
+        }
+        else 
+        if (viewInfo.isClone){
+            
+            //Getting clone model first time 
+            if (!savedWidgetInfo || !savedWidgetInfo.widgetModelClone){
+                console.debug('  cloning widget model');
+                widget = JSON.parse(JSON.stringify(widget));  //make copy          
+           
+                //clone_updateWidgetAttributes(widget, viewInfo);
+                clone_appendWidgetAnimateInfo(this, modelwid, id, viewInfo); //fill vis.clones.xxx  array 
+                clone_UpdateBindingAttrinbutesForWidget(this, id, viewInfo, widget); //update data|style attributes in widget
+            }
+            //Getting clone model from saved array vis.widgets[]
+            //(for run mode when rerender widget
+            else{
+                widget = savedWidgetInfo.widgetModelClone; 
+            }
+
+            widgetModelforClone = widget;  
+        }
+        else 
+        if (widget.tpl =='tplContainerView')
+        {
+            //widget = JSON.parse(JSON.stringify(widget)); //make copy
+        }
+
+        //Getting parentContainerWidget
+        if (parentContainerWidgetId)
+        {
+            let containerModel = undefined;
+
+            let parentContainerInstInfo = this.widgets[parentContainerWidgetId];
+            if (parentContainerInstInfo){
+                containerModel = this.views[parentContainerInstInfo.modelViewId].widgets[parentContainerInstInfo.divwid];
+            }
+                
+            //auto position widget in parent container
+            if (containerModel && containerModel.data.autopos){
+                let dX = Math.floor(Number(widget.style.left.slice(0,-2))/40);
+                let dY = Math.floor(Number(widget.style.top.slice(0,-2))/40);
+
+                widget.style["z-index"] = (dY*50 + dX); 
+
+                widget.style.left = 0;
+                widget.style.top = 0;
+                widget.style.height = containerModel.style.height; //='100%'
+                widget.style.width = containerModel.style.width; //='100%'
+
+                /*widget.style.left = getAttributSufix(widget.style.left);
+                if (widget.style.left=="") widget.style.left = 0;
+
+                widget.style.top =  getAttributSufix(widget.style.top);
+                if (widget.style.top=="") widget.style.top = 0;
+
+                widget.style.height = getAttributSufix(widget.style.height);
+                if (widget.style.height=="") widget.style.height = containerModel.style.height; //='100%'
+
+                widget.style.width = getAttributSufix(widget.style.width);
+                if (widget.style.width=="") widget.style.width = containerModel.style.width; //='100%'
+                */
+            }
+        }
+        else 
+        {   
+            /*if (!this.editMode && 
+                !viewInfo.isClone && 
+                ((widget.style.left.indexOf('|')>0)|
+                 (widget.style.top.indexOf('|')>0)|
+                 (widget.style.height.indexOf('|')>0)|
+                 (widget.style.width.indexOf('|')>0)
+                )) 
+              {
+                 widget = JSON.parse(JSON.stringify(widget)); //make copy
+              }
+            
+            widget.style.left = getAttributPrefix(widget.style.left);
+            widget.style.top = getAttributPrefix(widget.style.top);
+            widget.style.height = getAttributPrefix(widget.style.height);
+            widget.style.width = getAttributPrefix(widget.style.width);
+            */
+        }
+
+        var isRelative = widget && widget.style && 
+                        (widget.style.position === 'relative' || widget.style.position === 'static' || widget.style.position === 'sticky');
 
         // if widget has relative position => insert it into relative div
         if (this.editMode && isRelative && viewDiv === view) {
@@ -1659,6 +2007,8 @@ var vis = {
             }
         }
 
+        var $widget = $('#' + id);
+        
         // Add to the global array of widgets
         try {
             var userGroups;
@@ -1672,13 +2022,21 @@ var vis = {
             }
 
             this.widgets[id] = {
-                wid: id,
-                data: new can.Map($.extend({wid: id}, widget.data))
+                    wid: modelwid,       //model widgetID (w0000001)
+                 divwid: id,             //here id is unique wid (can contain ExName for CloneView)  w0000001_clone1
+            modelViewId: view,  
+                isClone: viewInfo.isClone, 
+                groupid: groupId,
+parentContainerWidgetId: parentContainerWidgetId, //               
+       widgetModelClone: widgetModelforClone, //save model only for clones. For non Clones using this.views[xx].widgets[xx] (memory optimizatin) 
+                   data: new can.Map($.extend({wid: id, modelwid: modelwid}, widget.data))
             };
+
         } catch (e) {
             console.log('Cannot bind data of widget widget:' + id);
             return;
         }
+
         // Register oid to detect changes
         // if (widget.data.oid !== 'nothing_selected')
         //   $.homematic("advisState", widget.data.oid, widget.data.hm_wid);
@@ -1687,7 +2045,7 @@ var vis = {
 
         try {
             //noinspection JSJQueryEfficiency
-            var $widget = $('#' + id);
+            //if widget exists then remove or clear
             if ($widget.length) {
                 var destroy = $widget.data('destroy');
 
@@ -1696,6 +2054,7 @@ var vis = {
                     destroy(id, $widget);
                     $widget.data('destroy', null);
                 }
+
                 if (isRelative && !$view.find('#' + id).length) {
                     $widget.remove();
                     $widget.length = 0;
@@ -1714,38 +2073,33 @@ var vis = {
                     view:    view,
                     style:   widget.style
                 });
-                if ($widget.length) {
-                    if ($widget.parent().attr('id') !== $view.attr('id')) $widget.appendTo($view);
-                    $widget.replaceWith(canWidget);
-                    // shift widget to group if required
-                } else {
-                    $view.append(canWidget);
-                }
-            } else if (widget.tpl) {
+            } 
+            else if (widget.tpl) {                                                                               
                 canWidget = can.view(widget.tpl, {
                     data:    widgetData,
                     viewDiv: viewDiv,
                     view:    view,
                     style:   widget.style
                 });
-                if ($widget.length) {
-                    if ($widget.parent().attr('id') !== $view.attr('id')) {
-                        $widget.appendTo($view);
-                    }
-                    $widget.replaceWith(canWidget);
-                    // shift widget to group if required
-                } else {
-                    $view.append(canWidget);
-                }
             } else {
                 console.error('Widget "' + id + '" is invalid. Please delete it.');
                 return;
             }
 
+            if ($widget.length) {
+                if ($widget.parent().attr('id') !== $view.attr('id')) { 
+                    $widget.appendTo($view);
+                }
+                $widget.replaceWith(canWidget);
+                // shift widget to group if required
+            } else {
+                $view.append(canWidget);
+            }
+
             var $wid = null;
 
             if (widget.style && !widgetData._no_style) {
-                $wid = $('#' + id);
+                $wid = $wid || $('#' + id);
 
                 // fix position
                 for (var attr in widget.style) {
@@ -1759,7 +2113,6 @@ var vis = {
                         }
                     }
                 }
-
                 $wid.css(widget.style);
             }
 
@@ -1772,6 +2125,7 @@ var vis = {
 
             $wid && $wid.addClass('vis-tpl-' + $tpl.data('vis-set') + '-' + $tpl.data('vis-name'));
 
+            //processing visibility 
             if (!this.editMode) {
                 if (this.isWidgetFilteredOut(view, id) || this.isWidgetHidden(view, id, undefined, widget.data)) {
                     var mWidget = document.getElementById(id);
@@ -1788,22 +2142,23 @@ var vis = {
                     this.addGestures(id, widget.data);
                 }
             }
-
             // processing of signals
             var s = 0;
             while (widget.data['signals-oid-' + s]) {
                 this.addSignalIcon(view, id, widget.data, s);
                 s++;
             }
+            // processing of last change
             if (widget.data['lc-oid']) {
                 this.addLastChange(view, id, widget.data);
             }
+            // processing of chart
             if (!this.editMode && widget.data['echart-oid']) {
                 this.addChart($wid, widget.data);
             }
 
             // If edit mode, bind on click event to open this widget in edit dialog
-            if (this.editMode) {
+            if (this.editMode && !viewInfo.isClone) {
                 this.bindWidgetClick(viewDiv, view, id);
 
                 // @SJ cannot select menu and dialogs if it is enabled
@@ -1814,13 +2169,15 @@ var vis = {
 
             $(document).trigger('wid_added', id);
 
+            //recursive render group members
             if (id[0] === 'g') {
                 for (var w = 0; w < widget.data.members.length; w++) {
                     if (widget.data.members[w] !== id) {
-                        this.renderWidget(viewDiv, view, widget.data.members[w], id);
+                        this.renderWidget(viewDiv, viewInfo, widget.data.members[w], id, needUpdateCloneAnimateInfo);
                     }
                 }
             }
+
         } catch (e) {
             var lines = (e.toString() + e.stack.toString()).split('\n');
             this.conn.logError('can\'t render ' + widget.tpl + ' ' + id + ' on "' + view + '": ');
@@ -1835,8 +2192,11 @@ var vis = {
             }
         }
     },
+    //******************************************************************************** */
     changeView:         function (viewDiv, view, hideOptions, showOptions, sync, callback) {
         var that = this;
+
+        console.debug('*********************************** changeView. '+viewDiv+' | '+view);
 
         if (typeof view === 'object') {
             callback = sync;
@@ -1974,6 +2334,7 @@ var vis = {
             });
         }
     },
+    //****************************************************************** */
     selectAutoFocus: function () {
         var $view = $('#visview_' + this.activeView);
         var $inputs = $view.find('input[autofocus]');
@@ -1987,9 +2348,21 @@ var vis = {
             $inputs[0].select();
         }
     },
+
+    //****************************************************************** */
     postChangeView:     function (viewDiv, view, callback) {
+        if (this.editMode)
+        {
+            if ((this.activeView != view) || (this.viewNavigateHistory.length==0))
+                this.addtoViewtoHistory(view);
+        }
+        
         this.activeView = view;
         this.activeViewDiv = viewDiv;
+
+        if (this.editMode){
+            this.UpdateEditorActiveViewZoom();
+        }
         /*$('#visview_' + viewDiv).find('.vis-view-container').each(function () {
          $('#visview_' + $(this).attr('data-vis-contains')).show();
          });*/
@@ -2022,6 +2395,7 @@ var vis = {
         }
         this.updateIframeZoom();
     },
+    //****************************************************************** */
     loadRemote:         function (callback, callbackArg) {
         var that = this;
         if (!this.projectPrefix) {
@@ -2216,7 +2590,10 @@ var vis = {
         }
     },
     isWidgetHidden:     function (view, widget, val, widgetData) {
-        widgetData = widgetData || this.views[view].widgets[widget].data;
+       
+        //widgetData = widgetData || this.views[view].widgets[widget].data;
+        widgetData = widgetData || (this.widgets[widget]?.data) ;
+
         var oid = widgetData['visibility-oid'];
         var condition = widgetData['visibility-cond'];
         if (oid) {
@@ -2295,15 +2672,18 @@ var vis = {
         }
     },
     isWidgetFilteredOut: function (view, widget) {
-        var w = this.views[view].widgets[widget];
+        var w =  this.widgets[widget] ;
+        //var w = this.views[view].widgets[widget];
+
         var v = this.viewsActiveFilter[view];
         return (w &&
-        w.data &&
-        w.data.filterkey &&
-        widget &&
-        widget.data &&
-        v.length > 0 &&
-        v.indexOf(widget.data.filterkey) === -1);
+                w.data &&
+                w.data.filterkey &&
+                widget &&
+                widget.data &&
+                v.length > 0 &&
+                v.indexOf(w.data.filterkey) === -1
+               );
     },
     calcCommonStyle:    function (recalc) {
         if (!this.commonStyle || recalc) {
@@ -2506,24 +2886,36 @@ var vis = {
         put(s);
         return result;
     },
-    extractBinding:     function (format, doNotIgnoreEditMode) {
-        if ((!doNotIgnoreEditMode && this.editMode) || !format) {
+    
+    //******************************************************************************************** */
+    //Binding utils
+
+    //for format getting bindInsructionObject array from cache
+    extractBinding:     function (format) {
+        if (!format) {
             return null;
         }
-        if (this.bindingsCache[format]) {
+        //At first try getting bindInsructionObject array from Cache   <<<<<<<<<<<<<<<<<<<<<<<<
+        if (!this.editMode && this.bindingsCache[format]) {
             return JSON.parse(JSON.stringify(this.bindingsCache[format]));
         }
 
+        //Parse format for binding instruction and getting array of bindInsructionObject  (look visUtils.extractBinding)  <<<<<<<<<<<<<<<<<<<<<<<<
         var result = extractBinding(format);
 
-        // cache bindings
-        if (result) {
+        //add to bindings cache
+        if (!this.editMode && result) {
             this.bindingsCache = this.bindingsCache || {};
             this.bindingsCache[format] = JSON.parse(JSON.stringify(result));
         }
 
         return result;
     },
+    
+    //return  value of  SpecialValue by Name (using in binding) 
+    // view - string - viewName
+    // wid - string - widgetName
+    // widget - object model
     getSpecialValues:   function (name, view, wid, widget) {
         switch (name) {
             case 'username.val':
@@ -2544,9 +2936,19 @@ var vis = {
                 return undefined;
         }
     },
-    formatBinding:      function (format, view, wid, widget, doNotIgnoreEditMode) {
-        var oids = this.extractBinding(format, doNotIgnoreEditMode);
-        for (var t = 0; t < oids.length; t++) {
+    
+    //Calculate binding instuction by "format" and return calculated value
+    // view, wid, widget  - newd only for getSpecialValues
+    // view - string - viewName
+    // wid - string - widgetName
+    // widget - object model
+    formatBinding:      function (format, view, wid, widget ) {
+      
+        //for format getting bindInsructionObject array from cache
+        var oids = this.extractBinding(format); //from cache
+
+        //Calc each instruction 
+        for (var t = 0; t < oids?.length; t++) {
             var value;
             if (oids[t].visOid) {
                 value = this.getSpecialValues(oids[t].visOid, view, wid, widget);
@@ -2624,6 +3026,58 @@ var vis = {
                                 value = parseFloat(value) % oids[t].operations[k].arg;
                             }
                             break;
+                        case '=':
+                        case '!=':
+                        case '>':
+                        case '>=':
+                        case '<':
+                        case '<=':
+                        case 'bit':                            
+                            if (oids[t].operations[k].arg !== undefined && oids[t].operations[k].arg !== null) {
+                                
+                                let operand = 0;
+                                let argIsArray = Array.isArray(oids[t].operations[k].arg);
+
+                                if (argIsArray)
+                                    operand = oids[t].operations[k].arg[0];
+                                else
+                                    operand = oids[t].operations[k].arg;
+                                
+
+                                let _boolResult = false;
+
+                                switch (oids[t].operations[k].op){
+                                    case '=':   _boolResult = parseFloat(value) == operand; break;
+                                    case '!=':  _boolResult = parseFloat(value) != operand; break;
+                                    case '>':   _boolResult = parseFloat(value) > operand; break;
+                                    case '>=':  _boolResult = parseFloat(value) >= operand; break;
+                                    case '<':   _boolResult = parseFloat(value) < operand; break;
+                                    case '<=':  _boolResult = parseFloat(value) <= operand; break;
+                                    case 'bit':
+                                                let  bitNum = Math.round(operand);
+                                                value = Math.round(value); 
+                                                if ((bitNum>=0) && (bitNum<=31)){
+                                                    _boolResult = value & (1<< bitNum);
+                                                }
+                                                break;       
+                                }
+
+                                if (argIsArray){
+
+                                    value = "";
+                                    if (_boolResult &&   (oids[t].operations[k].arg.length >= 2))  
+                                    value = oids[t].operations[k].arg[1];
+                                    else  
+                                    if (!_boolResult &&   (oids[t].operations[k].arg.length >= 3))  
+                                    value = oids[t].operations[k].arg[2];
+                                }
+                                else 
+                                {
+                                    value = _boolResult? 1: 0;
+                                }
+                            }
+                            break;
+
                         case 'round':
                             if (oids[t].operations[k].arg === undefined && oids[t].operations[k].arg !== null) {
                                 value = Math.round(parseFloat(value));
@@ -2702,7 +3156,13 @@ var vis = {
                         case 'ceil':
                             value = Math.ceil(parseFloat(value));
                             break;
-                    } //switch
+                        case 'json':
+                            if((value) && (typeof value === 'string'))          
+                            value = JSON.parse(value);
+                            if (typeof value === 'object') 
+                                value = getObjPropValue(value, oids[t].operations[k].arg)
+                            break;   
+                    } //switch1
                 }
             } //if for
             format = format.replace(oids[t].token, value);
@@ -2710,6 +3170,98 @@ var vis = {
         format = format.replace(/{{/g, '{').replace(/}}/g, '}');
         return format;
     },
+    
+
+    // Update all binding widget attibutes  in  vis.views[].widget[].data|Style.Attr = NewValue   by tagId
+    // NOT for EDIT MODE 
+    // on ALL view loaded or not!
+    updateAllBindingWidgetAttrbyTagID:  function(tagid,  checkEx=false, callback=undefined){
+
+        console.debug('     updateAllBindingWidgetAttrbyTagID: '+tagid)
+        var that=this;
+
+        if (this.bindings[tagid]) {
+            for (var i = 0; i < this.bindings[tagid].length; i++) {
+                    let bindItem = this.bindings[tagid][i];
+                    sub_CheckWidgetBinding(bindItem, false);
+                }
+        }
+    
+        if ( this.clones.bindingsByTag[tagid]) {
+                for (var i = 0; i < this.clones.bindingsByTag[tagid].length; i++) {
+                    let bindItem = this.clones.bindingsByTag[tagid][i];
+                    sub_CheckWidgetBinding(bindItem, true);
+                }
+        }
+
+        function sub_CheckWidgetBinding(bindItem, clonned){
+            
+            let widgetModel = undefined;
+           
+            if  (clonned)  
+             {  //here we get widget model from Vis instances widget array (vis.widgets[xxx].widgetModel)
+                //widgets already was rendered   
+                widgetModel = that.widgets[bindItem.widget].widgetModelClone;
+             }
+            else 
+            if (that.views[bindItem.view])
+            {  //not cloned. Here we get widget model from projet models (vis.views[xx].widgets[xx])
+               widgetModel = that.views[bindItem.view].widgets[bindItem.widget];
+            }
+
+            if (widgetModel)
+            {
+                let prevValue = widgetModel[bindItem.type][bindItem.attr];
+                var value = that.formatBinding(bindItem.format, bindItem.view, bindItem.widget, widgetModel);
+                if (prevValue == value)
+                 return;
+
+                widgetModel[bindItem.type][bindItem.attr] = value;
+                
+                //update for....    
+                if (that.widgets[bindItem.widget] && bindItem.type === 'data') {
+                    that.widgets[bindItem.widget][bindItem.type + '.' + bindItem.attr] = value;
+                }
+
+                //when Oid attribute has binging {} instuction 
+                if (checkEx){
+                    that.subscribeOidAtRuntime(value);
+                    that.visibilityOidBinding(bindItem, value);
+                }
+
+                // if need rerender widget    
+                if (callback){
+                    //Пробуем оптимизировать  не всегда выполнять rerenderWidget 
+                    var $widget = $('#' + bindItem.widget);
+                    let done=false;
+
+                    if ($widget){ 
+                        if (bindItem.attr=="background-color"){ 
+                             $widget.css("background-color",value);
+                              done=true;
+                            }
+                        else
+                        if (bindItem.attr=="html"){
+                            $widget.find('.vis-widget-body').html(value);
+                            done=true;
+                        }
+                        else
+                        if (bindItem.attr=="class"){
+                            if (prevValue.length>0) $widget.removeClass(prevValue); 
+                            if (value.length>0)     $widget.addClass(value);
+                            done=true;
+                        }
+                        ; //font-weight/height/left/top/width/
+                    }
+                    if (!done){
+                        callback(bindItem.view, bindItem.widget);  
+                    }
+                }
+            }
+        }
+    },
+
+    //******************************************************************************************** */
     findNearestResolution: function (resultRequiredOrX, height) {
         var w;
         var h;
@@ -2843,22 +3395,35 @@ var vis = {
 
         this.conn.getHistory(id, options, callback);
     },
+    //******************************************************************************************* */
+    //viewDiv - 'vis-view' ID without  prefix "visview_"  (ie PageA,  PageA_ClonePrefix)
+    //view - viewURI (ie PageA,  PageA?ClonePrefix;xxx...)
+    //******************************************************************************************* */
     destroyView:        function (viewDiv, view) {
         var $view = $('#visview_' + viewDiv);
+        
+        if ($view?.length == 0)
+        { //view can by destroys  by recurse call in  destroyWidget
+           return;
+        }
+        
+        let viewinfo=this.parseViewURI(view);
+        view = viewinfo.viewModelId;
 
-        console.debug('Destroy ' + view);
+        console.debug('Destroy view: ' + viewinfo.viewID);
 
-        // Get all widgets and try to destroy them
+        // Get all widgets and try to destroy themfindand
         for (var wid in this.views[view].widgets) {
             if (!this.views[view].widgets.hasOwnProperty(wid)) {
                 continue;
             }
-            this.destroyWidget(viewDiv, view, wid);
+            this.destroyWidget(viewDiv, view, wid + viewinfo.exName, true); //params   'view' and 'viewDiv' are not used now
         }
 
         $view.remove();
-        this.unsubscribeStates(view);
+        this.unsubscribeStates(viewinfo);
     },
+    //******************************************************************************************* */
     checkLicense: function () {
         if (!this.licTimeout && (typeof visConfig === 'undefined' || visConfig.license === false)) {
             this.licTimeout = setTimeout(function () {
@@ -2874,56 +3439,76 @@ var vis = {
             }.bind(this), 10000);
         }
     },
+    //******************************************************************************************* */
     findAndDestroyViews: function () {
         if (this.destroyTimeout) {
             clearTimeout(this.destroyTimeout);
             this.destroyTimeout = null;
         }
-        var containers = [];
-        var $createdViews = $('.vis-view');
-        for (var view in this.views) {
-            if (!this.views.hasOwnProperty(view) || view === '___settings') {
-                continue;
-            }
-            if (this.views[view].settings.alwaysRender || view === this.activeView) {
-                if (containers.indexOf(view) === -1) {
-                    containers.push(view);
-                }
-                var $containers = $('#visview_' + view).find('.vis-view-container');
-                $containers.each(function () {
-                    var cview = $(this).attr('data-vis-contains');
-                    if (containers.indexOf(cview) === -1) {
-                        containers.push(cview);
-                    }
-                });
-                // check dialogs too
-                var $dialogs = $('.vis-widget-dialog');
-                $dialogs.each(function () {
-                    if ($(this).is(':visible')) {
-                        var $containers = $(this).find('.vis-view-container');
-                        $containers.each(function () {
-                            var cview = $(this).attr('data-vis-contains');
-                            if (containers.indexOf(cview) === -1) {
-                                containers.push(cview);
-                            }
-                        });
-                    }
-                });
-            }
-        }
-        var that = this;
-        $createdViews.each(function () {
-            var $this = $(this);
-            var view = $this.data('view');
-            var viewDiv = $this.attr('id').substring('visview_'.length);
-            // If this view is used as container
-            if (containers.indexOf(viewDiv) !== -1 || $this.hasClass('vis-edit-group') || $this.data('persistent')) {
-                return;
-            }
 
-            that.destroyView(viewDiv, view);
+        //prepare list of used(visible) views. other will be destroyed
+        var containers = [];
+        
+        // Now we have clones  with differents #visview_  ID.  So, this is new  implementation of check containers child views
+        var that = this;
+
+        //get all "vis-view" objects  except Dialogs
+        var $containers = $('#vis_container').find('.vis-view'); 
+        $containers.each(function () {
+           let visview=$(this);
+           let view= visview.attr('data-view');                    //view modelName
+           let viewURI= visview.attr('data-vis-contains') || view; //   
+           
+           //only for Active or alwaysRender views
+           if (that.views.hasOwnProperty(view) &&
+               (that.views[view].settings.alwaysRender || view === that.activeView)) { //not enough for ViewClones
+            
+                if (containers.indexOf(viewURI) === -1) {
+                    containers.push(viewURI);
+                }
+                
+                //get subviews on containers of visview
+                var $subContainers = visview.find('.vis-view');  
+                $subContainers.each(function () {
+                    let viewURI= $(this).attr('data-vis-contains') || $(this).attr('data-view'); 
+
+                    if (containers.indexOf(viewURI) === -1) {
+                        containers.push(viewURI);
+                    }
+                });
+            }
+        })
+
+        // check dialogs too
+        var $dialogs = $('.vis-widget-dialog');
+        $dialogs.each(function () {
+            if ($(this).is(':visible')) {
+                $containers = $(this).find('.vis-view');
+                $containers.each(function () {
+                    let viewURI= $(this).attr('data-vis-contains') || $(this).attr('data-view'); 
+
+                    if (containers.indexOf(viewURI) === -1) {
+                        containers.push(viewURI);
+                    }
+                });
+            }
+        });
+
+        //List has prepared, now remove views that are not  in the list 
+        var $createdViews = $('.vis-view');
+        $createdViews.each(function () {
+            var $this = $(this);            //View or CloneView
+            let viewURI=$this.attr('data-vis-contains')||$this.attr('data-view'); 
+            let viewDiv=$this.attr('id').substring('visview_'.length);;
+           
+            if (containers.indexOf(viewURI) !== -1 || $this.hasClass('vis-edit-group') || $this.data('persistent')) {
+                return;}
+
+            that.destroyView(viewDiv, viewURI);
         });
     },
+
+    //**************************************************************************** */    
     destroyUnusedViews: function () {
         this.destroyTimeout && clearTimeout(this.destroyTimeout);
         this.destroyTimeout = null;
@@ -2938,6 +3523,8 @@ var vis = {
             }, timeout, this);
         }
     },
+
+    //**************************************************************************** */    
     generateInstance:   function () {
         if (typeof storage !== 'undefined') {
             this.instance = (Math.random() * 4294967296).toString(16);
@@ -2947,77 +3534,122 @@ var vis = {
             storage.set(this.storageKeyInstance, this.instance);
         }
     },
-    subscribeStates:    function (view, callback) {
-        if (!view || this.editMode) {
+
+    //**********************************************************************************/
+    subscribeStates:    function (viewInfo, callback) {
+        if (!viewInfo || this.editMode) {
             return callback && callback();
         }
 
-        // view yet active
-        if (this.subscribing.activeViews.indexOf(view) !== -1) {
+        // this view yet active
+        if (this.subscribing.activeViews.indexOf(viewInfo.viewURI) !== -1) {
             return callback && callback();
         }
-
-        this.subscribing.activeViews.push(view);
-
+        this.subscribing.activeViews.push(viewInfo.viewURI);
+        
+        // subscribe
+        let view = viewInfo.viewModelId; // get ViewModelId
         this.subscribing.byViews[view] = this.subscribing.byViews[view] || [];
 
-        // subscribe
-        var oids = [];
+        var oids_get = [];               //array for getting Values
+        var oids_subscribe = [];         //array for subscribe Values (exclude "local_")
+        
         for (var i = 0; i < this.subscribing.byViews[view].length; i++) {
-            if (this.subscribing.active.indexOf(this.subscribing.byViews[view][i]) === -1) {
-                this.subscribing.active.push(this.subscribing.byViews[view][i]);
-                oids.push(this.subscribing.byViews[view][i]);
+            let oid=this.subscribing.byViews[view][i];
+
+            //if (oid.indexOf('groupAttr') === 0)  //now not possible here, groupAttr changed to real VarName in getUsedObjectIDs()  (after #492)
+            //   continue;
+
+            if (oid.indexOf('local_') === 0){ 
+                if (((this.states[oid+'.val'] == 'null') || (this.states[oid+'.val'] == null))   //Value can be already set by "user" js script 
+                    && !oids_get.includes(oid)
+                   )
+                  oids_get.push(oid); //add only to "oids_get" array. will try to find it in URL params  
+                continue;
             }
+
+            if (viewInfo.isClone){
+              oid = checkForViewAttr(oid,viewInfo); //if oid contain "ViewAttr" changein it to realTagId
+              if (!oid) continue;
+            }
+           
+            let pos = this.subscribing.active.indexOf(oid);  
+            if (pos === -1) {
+                this.subscribing.active.push(oid);
+                this.subscribing.activeLinkCount.push(1);
+                
+                oids_subscribe.push(oid);
+                oids_get.push(oid);
+            }
+            else this.subscribing.activeLinkCount[pos]++; //increment tag link count
         }
-        if (oids.length) {
+
+        if (oids_get.length) {
             var that = this;
-            console.debug('[' + Date.now() + '] Request ' + oids.length + ' states.');
-            this.conn.getStates(oids, function (error, data) {
+            console.debug('    SUBSCRIBE get:' + oids_get.length + ' subscribe:' + oids_subscribe.length+' states.');
+            
+            this.conn.getStates(oids_get, function (error, data) {
                 error && that.showError(error);
 
                 that.updateStates(data);
-                that.conn.subscribe(oids);
+
+                if (oids_subscribe.length)
+                    that.conn.subscribe(oids_subscribe);
+                
                 callback && callback();
             });
         } else {
             callback && callback();
         }
     },
-    unsubscribeStates:  function (view) {
-        if (!view || this.editMode) return;
+    //******************************************************************************************* */
+    unsubscribeStates:  function (viewInfo) {
+        if (!viewInfo || this.editMode) return;
 
         // view yet active
-        var pos = this.subscribing.activeViews.indexOf(view);
+        var pos = this.subscribing.activeViews.indexOf(viewInfo.viewURI);
         if (pos === -1) {
             return;
         }
         this.subscribing.activeViews.splice(pos, 1);
 
         // unsubscribe
+        let view = viewInfo.viewModelId;
         var oids = [];
+
         // check every OID
         for (var i = 0; i < this.subscribing.byViews[view].length; i++) {
             var id = this.subscribing.byViews[view][i];
 
+            if (viewInfo.isClone){
+                id = checkForViewAttr(id,viewInfo)
+                if (!id) continue;
+              }
+
             pos = this.subscribing.active.indexOf(id);
             if (pos !== -1) {
-                var isUsed = false;
-                // Is OID is used something else
-                for (var v = 0; v < this.subscribing.activeViews.length; v++) {
-                    if (this.subscribing.byViews[this.subscribing.activeViews[v]].indexOf(id) !== -1) {
-                        isUsed = true;
-                        break;
-                    }
-                }
-                if (!isUsed) {
+                this.subscribing.activeLinkCount[pos]--;
+               
+                if (this.subscribing.activeLinkCount[pos]===0) //no more links
+                {
                     oids.push(id);
                     this.subscribing.active.splice(pos, 1);
+                    this.subscribing.activeLinkCount.splice(pos, 1);
                 }
             }
         }
-        oids.length && this.conn.unsubscribe(oids);
+        if (oids.length > 0){
+          console.debug('    UNSUBSCRIBE  count:' + oids.length+' states.');
+          this.conn.unsubscribe(oids);
+        }
+
     },
+    //******************************************************************************************* */
+    // id - tagID
+    // state - tag state(value)
     updateState:        function (id, state) {
+        
+        //Update state
         if (id.indexOf('local_') !== 0) {
             // not needed for local variables
             if (this.editMode) {
@@ -3028,7 +3660,8 @@ var vis = {
                 if (state.q !== undefined && state.q !== null) {
                     this.states[id + '.q'] = state.q;
                 }
-            } else {
+            } 
+            else {
                 var o = {};
                 // Check new model
                 o[id + '.val'] = state.val;
@@ -3046,12 +3679,18 @@ var vis = {
             }
         }
 
-        if (!this.editMode && this.visibility[id]) {
-            for (var k = 0; k < this.visibility[id].length; k++) {
-                var mmWidget = document.getElementById(this.visibility[id][k].widget);
-                if (!mmWidget) continue;
-                if (this.isWidgetHidden(this.visibility[id][k].view, this.visibility[id][k].widget, state.val) ||
-                    this.isWidgetFilteredOut(this.visibility[id][k].view, this.visibility[id][k].widget)) {
+        var that=this;
+        {//PROCESS WIDGET VISIBILITY
+            //Define the common function 
+            function CheckWidgetVisibility(view, wid){
+               if (that.subscribing.activeViews.indexOf(view) == -1) //optimization, do not proceed if view is't visible
+                  return;
+                
+                var mmWidget = document.getElementById(wid);
+                if (!mmWidget) return;
+
+                if (that.isWidgetHidden(view, wid, state.val) ||
+                    that.isWidgetFilteredOut(view, wid)) {
                     $(mmWidget).hide();
                     if (mmWidget &&
                         mmWidget._customHandlers &&
@@ -3067,54 +3706,111 @@ var vis = {
                     }
                 }
             }
-        }
 
-        // process signals
-        if (!this.editMode && this.signals[id]) {
-            for (var s = 0; s < this.signals[id].length; s++) {
-                var signal = this.signals[id][s];
-                var mWidget = document.getElementById(signal.widget);
-
-                if (!mWidget) {
-                    continue;
+            //First check visibility[] collection of loading models
+            if (!this.editMode && this.visibility[id]) {
+                for (var k = 0; k < this.visibility[id].length; k++) {
+                    var visibility = this.visibility[id][k];
+                    CheckWidgetVisibility(visibility.view, visibility.widget);
                 }
+            }
 
-                if (this.isSignalVisible(signal.view, signal.widget, signal.index, state.val)) {
-                    $(mWidget).find('.vis-signal[data-index="' + signal.index + '"]').show();
+            //Next check visibilityClone[] collection of CloneView 
+            if (!this.editMode && this.clones.visibility[id]) {
+                for (var k = 0; k < this.clones.visibility[id].length; k++) {
+                    var visibility = this.clones.visibility[id][k];
+                    CheckWidgetVisibility(visibility.view, visibility.widget);
+                }
+            }
+        }
+        
+        {//PROCESS WIDGET SIGNALS
+            //Define the common function 
+            function CheckWidgetSignals(view, wid, sindex){
+                if (that.subscribing.activeViews.indexOf(view) == -1) //optimization, do not proceed if view is't visible
+                    return;
+
+                var mWidget = document.getElementById(wid);
+
+                if (!mWidget) return;
+                
+                if (that.isSignalVisible(view, wid, sindex, state.val)) {
+                    $(mWidget).find('.vis-signal[data-index="' + sindex + '"]').show();
                 } else {
-                    $(mWidget).find('.vis-signal[data-index="' + signal.index + '"]').hide();
+                    $(mWidget).find('.vis-signal[data-index="' + sindex + '"]').hide();
+                }
+            }
+
+            //-------------------------------        
+            if (!this.editMode && this.signals[id]) {
+                for (var s = 0; s < this.signals[id].length; s++) {
+                    var signal = this.signals[id][s];
+                    CheckWidgetSignals(signal.view, signal.widget, signal.index);
+                }
+            }
+
+            if (!this.editMode && this.clones.signals[id]) {
+                for (var s = 0; s < this.clones.signals[id].length; s++) {
+                    var signal = this.clones.signals[id][s];
+                    CheckWidgetSignals(signal.view, signal.widget, signal.index);
                 }
             }
         }
 
-        // Process last update
-        if (!this.editMode && this.lastChanges[id]) {
-            for (var l = 0; l < this.lastChanges[id].length; l++) {
-                var update = this.lastChanges[id][l];
-                var uWidget = document.getElementById(update.widget);
+        {// Process last update
+            function CheckWidgetLastChanges(view, wid){
+                if (that.subscribing.activeViews.indexOf(view) == -1) //optimization, do not proceed if view is't visible
+                return;
+
+                var uWidget = document.getElementById(wid);
                 if (uWidget) {
-                    var $lc = $(uWidget).find('.vis-last-change');
+                    var $lc = $(uWidget).find('.vis-last-change:first');
                     var isInterval = $lc.data('interval');
-                    $lc.html(this.binds.basic.formatDate($lc.data('type') === 'last-change' ? state.lc : state.ts, $lc.data('format'), isInterval === 'true' || isInterval === true));
+
+                    let timeValue = "";
+                    if ($lc.data('type') === 'value'){
+                     timeValue =  state.val;
+                    }
+                    else 
+                     timeValue = that.binds.basic.formatDate($lc.data('type') === 'last-change' ? state.lc : state.ts, 
+                                                             $lc.data('format'),
+                                                             isInterval === 'true' || isInterval === true)
+
+                    $lc.html(timeValue);
+                }
+            }
+            
+            //-------------------------------        
+            if (!this.editMode && this.lastChanges[id]) {
+               for (var l = 0; l < this.lastChanges[id].length; l++) {
+                var update = this.lastChanges[id][l];
+                    CheckWidgetLastChanges(update.view, update.widget );
+                }
+            }
+
+            if (!this.editMode && this.clones.lastChanges[id]) {
+                for (var l = 0; l < this.clones.lastChanges[id].length; l++) {
+                    var update = this.clones.lastChanges[id][l];
+                    CheckWidgetLastChanges(update.view, update.widget);
                 }
             }
         }
 
         // Bindings on every element
-        if (!this.editMode && this.bindings[id]) {
-            for (var i = 0; i < this.bindings[id].length; i++) {
-                var widget = this.views[this.bindings[id][i].view].widgets[this.bindings[id][i].widget];
-                var value = this.formatBinding(this.bindings[id][i].format, this.bindings[id][i].view, this.bindings[id][i].widget, widget);
+        if (!this.editMode)
+        {
+            let needRenderWidgets={}; //cache to prevent repeated render of the same widget 
+            
+            that.updateAllBindingWidgetAttrbyTagID(id, true, function (viewId, widgetId) {
+                //Append to array need rerendered widget
+                if (that.subscribing.activeViews.indexOf(viewId) >=0 ) //optimization, do not proceed if view is't visible
+                    needRenderWidgets[widgetId] = viewId; 
+            });
 
-                widget[this.bindings[id][i].type][this.bindings[id][i].attr] = value;
-                if (this.widgets[this.bindings[id][i].widget] && this.bindings[id][i].type === 'data') {
-                    this.widgets[this.bindings[id][i].widget][this.bindings[id][i].type + '.' + this.bindings[id][i].attr] = value;
-                }
-
-                this.subscribeOidAtRuntime(value);
-                this.visibilityOidBinding(this.bindings[id][i], value);
-
-                this.reRenderWidget(this.bindings[id][i].view, this.bindings[id][i].view, this.bindings[id][i].widget);
+            //Rerender widgets once
+            for (var widget in needRenderWidgets){
+                if (!needRenderWidgets.hasOwnProperty(widget)) continue;
+                that.reRenderWidget(needRenderWidgets[widget], needRenderWidgets[widget], widget);    
             }
         }
 
@@ -3126,8 +3822,16 @@ var vis = {
                 this.conn.logError('Error: can\'t update states object for ' + id + '(' + e + '): ' + JSON.stringify(e.stack));
             }
         }
+        
+        //selecting
         this.editMode && $.fn.selectId && $.fn.selectId('stateAll', id, state);
     },
+    
+    //******************************************************************************************* */
+    //calling when:
+    // - reconnection to the server
+    // - subsctibe new tags
+    //******************************************************************************************* */
     updateStates:       function (data) {
         if (data) {
             for (var id in data) {
@@ -3136,7 +3840,11 @@ var vis = {
                 }
                 var obj = data[id];
 
-                if (id.indexOf('local_') === 0) {
+                {//updating state region 
+                if ((id.indexOf('local_') === 0) && 
+                    ((this.states[id+'.val'] == 'null') || (this.states[id+'.val'] == null)) //Value can be already set by "user" js script 
+                )
+                {
                     // if it is a local variable, we have to initiate this
                     obj = {
                         val: this.getUrlParameter(id),              // using url parameter to set initial value of local variable
@@ -3176,21 +3884,15 @@ var vis = {
                 } catch (e) {
                     this.conn.logError('Error: can\'t create states object for ' + id + '(' + e + ')');
                 }
+                }//end region
 
-                if (!this.editMode && this.bindings[id]) {
-                    for (var i = 0; i < this.bindings[id].length; i++) {
-                        var widget = this.views[this.bindings[id][i].view].widgets[this.bindings[id][i].widget];
-                        var value = this.formatBinding(this.bindings[id][i].format, this.bindings[id][i].view, this.bindings[id][i].widget, widget);
-
-                        widget[this.bindings[id][i].type][this.bindings[id][i].attr] = value;
-
-                        this.subscribeOidAtRuntime(value);
-                        this.visibilityOidBinding(this.bindings[id][i], value);
-                    }
-                }
+                //for tagID (id) recalc all binding for all widgets on all Pages    
+                if (!this.editMode)
+                  this.updateAllBindingWidgetAttrbyTagID(id, true);               
             }
         }
     },
+    //******************************************************************************************* */
     updateIframeZoom:   function (zoom) {
         if (zoom === undefined || zoom === null) {
             zoom = document.body.style.zoom;
@@ -3224,7 +3926,10 @@ var vis = {
     subscribeOidAtRuntime: function (oid, callback, force) {
         // if state value is an oid, and it is not subscribe then subscribe it at runtime, can happen if binding are used in oid attributes
         // the id with invalid contains characters not allowed in oid's
+        FORBIDDEN_CHARS.lastIndex=0;
         if (!FORBIDDEN_CHARS.test(oid) && (this.subscribing.active.indexOf(oid) === -1 || force) && oid.length < 300) {
+         
+            // Oid value allows the format: "any.00.____"   or  "any.any.any.00.___" 
             if ((/^[^.]*\.\d*\..*|^[^.]*\.[^.]*\.[^.]*\.\d*\..*/).test(oid)) {
                 this.subscribing.active.push(oid);
 
@@ -3239,6 +3944,7 @@ var vis = {
             }
         }
     },
+
     visibilityOidBinding: function (binding, oid) {
         // if attribute 'visibility-oid' contains binding
         if (binding.attr === 'visibility-oid') {
@@ -3527,6 +4233,7 @@ function main($, onReady) {
         });
     }
 
+    /************************************************************************************************/
     function createIds(IDs, index, callback) {
         if (typeof index === 'function') {
             callback = index;
@@ -3536,12 +4243,17 @@ function main($, onReady) {
         var j;
         var now = Date.now();
         var obj = {};
+       
+        //Creating  all undefined by server subscribing tags 
         for (j = index; j < vis.subscribing.IDs.length && j < index + 100; j++) {
+
             var _id = vis.subscribing.IDs[j];
             if (vis.states[_id + '.val'] === undefined || vis.states[_id + '.val'] === null) {
+                
                 if (!_id || !_id.match(/^dev\d+$/)) {
                     console.log('Create inner vis object ' + _id);
                 }
+
                 if (vis.editMode) {
                     vis.states[_id + '.val'] = 'null';
                     vis.states[_id + '.ts']  = now;
@@ -3554,19 +4266,15 @@ function main($, onReady) {
                     obj[_id + '.lc']  = now;
                 }
 
-                if (!vis.editMode && vis.bindings[_id]) {
-                    for (var kk = 0; kk < vis.bindings[_id].length; kk++) {
-                        var __widget = vis.views[vis.bindings[_id][kk].view].widgets[vis.bindings[_id][kk].widget];
-                        __widget[vis.bindings[_id][kk].type][vis.bindings[_id][kk].attr] = vis.formatBinding(vis.bindings[_id][kk].format, vis.bindings[_id][kk].view, vis.bindings[_id][kk].widget, __widget);
-                    }
-                }
-            } else if (!vis.editMode && vis.bindings[_id] && (_id === 'username' || _id === 'login')) {
-                for (var k = 0; k < vis.bindings[_id].length; k++) {
-                    var _widget = vis.views[vis.bindings[_id][k].view].widgets[vis.bindings[_id][k].widget];
-                    _widget[vis.bindings[_id][k].type][vis.bindings[_id][k].attr] = vis.formatBinding(vis.bindings[_id][k].format, vis.bindings[_id][k].view, vis.bindings[_id][k].widget, _widget);
-                }
+                if (!vis.editMode)
+                   vis.updateAllBindingWidgetAttrbyTagID(_id); //now just for Acvive(loading view), not for all project widgets           
+            }
+            else 
+            if (!vis.editMode  && (_id === 'username' || _id === 'login')) {
+                vis.updateAllBindingWidgetAttrbyTagID(_id);    
             }
         }
+
         try {
             vis.states.attr(obj);
         } catch (e) {
@@ -3706,6 +4414,7 @@ function main($, onReady) {
                             if (vis.subscribing.active.length) {
                                 vis.conn.subscribe(vis.subscribing.active);
                             }
+
                             // Create non-existing IDs
                             if (vis.subscribing.IDs) {
                                 createIds(vis.subscribing.IDs, function () {

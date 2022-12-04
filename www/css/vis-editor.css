@@ -24,12 +24,26 @@ body {
 :focus {
     outline: none;
 }
+.viewNavigate:hover{
+    text-decoration: none; /* Убираем подчеркивание */
+    color: #fff; /* Цвет ссылки при наведении на нее курсора мыши */  
+    background: #e24486; /* Цвет фона */
+}
+.viewNavigate{
+    margin: 10px;
+    font-weight: bold;
+}
+
+.infoPanel{
+    font-weight: bold;
+    color: navy;
+}
 
 .vis_container_edit {
     width: -webkit-calc(100% - 5px)!important;
     width: calc(100% - 2px)!important;
     height: -webkit-calc(100% - 32px)!important;
-    height: calc(100% - 32px)!important;
+    height: calc(100% - 50px)!important;
     position: relative;
     overflow: auto;
     border-bottom-width: 0;

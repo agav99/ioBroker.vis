@@ -332,19 +332,33 @@
                 timer = null;
                 var view = viewArr[val];
                 if (!persistent) {
-                    $this.parent().find('div.vis-view').remove();
+                    //$this.parent().find('div.vis-view').find('div.vis-view').remove();
+                    $this.parent().find('div.vis-view').hide().appendTo($('#vis_container')); //for destroy hidden view in findAndDestroyViews()  
                 } else {
                     $this.parent().find('div.vis-view').hide().appendTo($('#vis_container'));
                 }
+
+                let viewInfo=vis.parseViewURI(view); 
+                view = viewInfo.viewModelId;
                 if (vis.views[view]) {
-                    vis.renderView(view, view, true, function (_view) {
+                    vis.renderView(view, viewInfo.viewURI, true, function (_view) {
                         var $view = $('#visview_' + _view);
                         $view.show().data('persistent', persistent);
                         if (!$this.find('#visview_' + _view).length) {
+                            
+                            let err=$this.find('.container-error');
+                            if (err.length) err.remove()
+                           
                             $view.appendTo($this);
                         }
                     });
                 }
+                else{
+                    let err=$this.find('.container-error');
+                    if (!err.length) 
+                        $this.append('<span style="color: red" class="container-error">'+ _('error: view not found.') + ' </span>');   
+                }
+
                 vis.destroyUnusedViews();
             }
 
@@ -1179,6 +1193,7 @@
                 }, refreshInterval);
             }
         },
+
         imgRefresh: function (el, src, refreshInterval, refreshOnWakeUp, refreshOnViewChange, refreshWithNoQuery) {
             var widgetView;
             if (src && typeof src === 'object') {
@@ -2474,12 +2489,14 @@
         data-vis-prev='<img src="widgets/basic/img/Prev_ContainerView.png"></img>'
         data-vis-type="container"
         data-vis-name="view in widget"
-        data-vis-attrs="contains_view/views">
+        data-vis-attrs="contains_view/views;"
+	data-vis-attrs0="autopos/checkbox;count[1]/number,0,10;viewAttr(1-count)/id"
+        >
     <div class="vis-widget <%== this.data.attr('class') %>" style="width:400px; height: 270px;" id="<%= this.data.attr('wid') %>">
         <% if (vis.editMode) { %>
             <div class="editmode-helper"></div>
         <% } %>
-        <div data-vis-contains="<%= this.data.attr('contains_view') %>" class="vis-widget-body vis-view-container">
+        <div data-vis-contains="<%= vis.getViewURI(this.data)%>" class="vis-widget-body vis-view-container">
         </div>
     </div>
 </script>

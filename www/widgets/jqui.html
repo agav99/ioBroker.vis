@@ -378,9 +378,16 @@
                 open: function () {
                     $(this).parent().find('.ui-widget-header button .ui-button-text').html('');
                     $(this).parent().css('z-index', 998);
+	         	    $(this).parent().css('display','inline-block');
+                    $(this).parent().css('vertical-align','top'); 
+
                     //touchscreen fix
                     $dlg.find('.vis-view-container').each(function () {
                         var cview = $(this).attr('data-vis-contains');
+                        
+                        let viewInfo=vis.parseViewURI(cview);
+                        cview=viewInfo.viewModelId;
+
                         if (!vis.views[cview]) {
                             $(this).append('error: view not found.');
                             return false;
@@ -389,7 +396,7 @@
                             return false;
                         }
                         var $this = this;
-                        vis.renderView(cview, cview, false, function (_view) {
+                        vis.renderView(cview, viewInfo.viewURI, true, function (_view) {
                             $('#visview_' + _view)
                                     .appendTo($this)
                                     .show();
@@ -433,14 +440,22 @@
             if (persistent) $dlg.find('.vis-view-container').data('persistent', persistent);
 
             if (!vis.editMode) {
+                var moved = false;
                 $(el).parent().find('div.vis-widget-body').on('click touchend', function (event) {
-                    event.stopPropagation();
                     // Protect against two events
                     if (vis.detectBounce(this)) return;
+                    if (moved) return;
+                    event.stopPropagation();
 
                     var $id =  $('#' + $(this).parent().attr('id') + '_dialog');
                     $id.dialog('open');
                     return false;
+                }
+                ).on('touchmove', function () {
+                    moved = true;
+                }
+                ).on('touchstart', function () {
+                    moved = false;
                 });
             } else {
                 $(el).parent().find('div.vis-widget-body').show();
@@ -1449,13 +1464,14 @@
         data-vis-type="container,dialog"
         data-vis-name="container - HTML - view in jqui Dialog"
         data-vis-attrs="html/text;contains_view/views;setId/id;setValue;"
-        data-vis-attrs0="group.dialog;title;noHeader/checkbox;autoclose/slider,0,30000,100;modal/checkbox;dialog_width;dialog_height;dialog_top;dialog_left;overflowX/nselect,,visible,hidden,scroll,auto,initial,inherit;overflowY/nselect,,visible,hidden,scroll,auto,initial,inherit">
+        data-vis-attrs0="count[1]/number,0,10;viewAttr(1-count)/id;"
+        data-vis-attrs1="group.dialog;title;noHeader/checkbox;autoclose/slider,0,30000,100;modal/checkbox;dialog_width;dialog_height;dialog_top;dialog_left;overflowX/nselect,,visible,hidden,scroll,auto,initial,inherit;overflowY/nselect,,visible,hidden,scroll,auto,initial,inherit">
     <div class="vis-widget <%== this.data.attr('class') %>" style="width: 200px; height: 130px; border: 1px solid #000; background: #fff; cursor: pointer" id="<%= this.data.attr('wid') %>">
         <div id="<%= this.data.attr('wid') %>_body" class="vis-widget-body">
             <%== this.data.attr('html') %>
         </div>
         <div id="<%= this.data.attr('wid') %>_dialog" style="display: none" class="vis-widget-dialog" title="<%= this.data.attr('title') %>">
-            <div data-vis-contains="<%= this.data.attr('contains_view') %>" class="vis-widget-body vis-view-container"></div>
+            <div data-vis-contains="<%= vis.getViewURI(this.data) %>" class="vis-widget-body vis-view-container"></div>
         </div>
         <div class="popup-helper" <%= (el) -> vis.binds.jqueryui.dialogContainer(el, data) %> />
         <div class="popup-helper" <%= (el) -> vis.binds.jqueryui.dialogAutoClose(el, data.attr('autoclose')) %> />
