@@ -33,7 +33,7 @@ function replaceViewParamAttr(inputStr, viewParamsList) {
 function checkForViewAttr(inputStr, viewInfo, RemovePagePrefix=false) {
 
 
-   if (inputStr.indexOf('viewAttr') >= 0){
+   if (inputStr && inputStr.indexOf('viewAttr') >= 0){
       
       //for visibility/signals/lastChanges/bindings configurations modelTagId containt "PageName_" at the beginniing 
       if (RemovePagePrefix)
