@@ -4638,7 +4638,8 @@ vis = $.extend(true, vis, {
                 } else {
                     $('.vis-screen-default').prop('checked', false).prop('disabled', true);
                 }
-                $('.vis-screen-render-always').prop('checked', this.views[view].settings.alwaysRender);
+                let alwaysRender = (typeof this.views[view].settings.alwaysRender == 'undefined')? false :  this.views[view].settings.alwaysRender;
+                $('.vis-screen-render-always').prop('checked', alwaysRender);
 
                 this.editSetGrid(viewDiv, view);
 
@@ -7042,6 +7043,21 @@ vis = $.extend(true, vis, {
                     '-webkit-transform-origin': 'top left',
                     transform : 'scale('+ zoomValue +')'
             });
+        }
+
+        if  ((this.views[this.activeView].settings.sizey !=="") &&   
+             (this.views[this.activeView].settings.sizex !=="")){
+            var vwidth = parseInt(this.views[this.activeView].settings.sizex, 0)*zoomValue;
+            var vheight = parseInt(this.views[this.activeView].settings.sizey, 0)*zoomValue;
+
+            var $sizeX = $('#size_x');
+            var $sizeY = $('#size_y');
+            if ($sizeX && $sizeY && vwidth>0 && vheight>0){
+                $sizeY.css('top',    (vheight + 1) + 'px');
+                $sizeY.css('width',  (vwidth + 1) + 'px');
+                $sizeX.css('left',   (vwidth + 1) + 'px');
+                $sizeX.css('height', (vheight + 3) + 'px');
+            }
         }
     },
     
