@@ -209,6 +209,7 @@ function extractBinding(format) {
                 });
             }
 
+            //обработка части инструкции  между ___;___;____    
             for (var u = 1; u < parts.length; u++) {
                 // eval construction
                 if (isEval) {
@@ -251,6 +252,7 @@ function extractBinding(format) {
                     }
                 } else {
 
+                    //преобразование value в float. иначе null
                     function checkValueNumber(value){
                         if (value === undefined) {
                             return null
@@ -274,7 +276,7 @@ function extractBinding(format) {
 
                     var parse = parts[u].match(/([\w\s\/+*-=<>!]+)(\(.+\))?/);  //Examples:  *(256); HEX2; date(hh:mm); array(value1,value2) 
                     if (parse && parse[1]) {
-                        parse[1] = parse[1].trim();
+                        parse[1] = parse[1].trim();  //то, что до    (___)
                        
                         // operators requires parameter
                         if (parse[1] === '*' ||
