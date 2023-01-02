@@ -1751,6 +1751,10 @@ vis = $.extend(true, vis, {
                             $widget.css(css, val);
                         }
                     }
+                    else {
+                        var $widget = $('#' + wdata.widgets[i]);
+                        $widget.css('transform', val);
+                    }
 
                     if (that.activeWidgets.indexOf(wdata.widgets[i]) !== -1) {
                         that.showWidgetHelper(viewDiv, view, wdata.widgets[i], true);

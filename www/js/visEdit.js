@@ -4431,8 +4431,14 @@ vis = $.extend(true, vis, {
                 return;
             }
             // disable transform while editing
-            if ($widget.css('transform')) {
-                $widget.css('transform', '').attr('data-tmodified', true);
+            let transformVal = $widget.css('transform');
+            if (transformVal && transformVal !=='none') {
+                //$widget.css('transform', '').attr('data-tmodified', true);
+                //по наличию этого признака потом выполняется примененеитрансформации ( inspectWidgets)
+                $widget.attr('data-tmodified', true);
+
+                //if (transformVal.indexOf("rotate")>=0) //так не сработает, тк вместо rotate  получаем matrix
+                return; //не показываем helper
             }
 
             var pos = this.editWidgetsRect(viewDiv, view, wid);
