@@ -343,7 +343,7 @@ var vis = {
     user:               '',   // logged in user
     loginRequired:      false,
     sound:              /^((?!chrome|android).)*safari/i.test(window.navigator.userAgent) ? $('<audio id="external_sound" autoplay muted></audio>').appendTo('body') : null,
-
+    
     //******************************************************************************* */
     _setValue:          function (id, state, isJustCreated) {
         var that = this;
@@ -1736,6 +1736,7 @@ var vis = {
             'border-radius': data['lc-position-horz'] === 'left' ? (border + ' 0 0 ' + border) : (data['lc-position-horz'] === 'right' ? '0 ' + border + ' ' + border + ' 0' : border),
             'white-space': 'nowrap'
         };
+
         if (data['lc-font-size']) {
             css['font-size'] = data['lc-font-size'];
         }
@@ -2124,6 +2125,10 @@ parentContainerWidgetId: parentContainerWidgetId, //
             var $tpl = $('#' + widget.tpl);
 
             $wid && $wid.addClass('vis-tpl-' + $tpl.data('vis-set') + '-' + $tpl.data('vis-name'));
+
+            if (this.editMode &&  (widget.tpl=='tplHtml')){
+                $wid && $wid.addClass('vis_edit_notVisible');
+            }
 
             //processing visibility 
             if (!this.editMode) {
@@ -3045,6 +3050,10 @@ parentContainerWidgetId: parentContainerWidgetId, //
                                 
 
                                 let _boolResult = false;
+
+                                if (typeof value =='boolean'){
+                                    value = value?1:0;
+                                }
 
                                 switch (oids[t].operations[k].op){
                                     case '=':   _boolResult = parseFloat(value) == operand; break;

@@ -39,6 +39,13 @@ body {
     color: navy;
 }
 
+.vis_edit_notVisible {
+    outline-style: dotted;
+    outline-color: gray;
+    outline-width: 1px;
+    outline-offset: -2px;
+}
+
 .vis_container_edit {
     width: -webkit-calc(100% - 5px)!important;
     width: calc(100% - 2px)!important;
