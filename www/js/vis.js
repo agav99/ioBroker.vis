@@ -1576,17 +1576,38 @@ var vis = {
         var that = this;
 
         gestures.forEach(function (gesture) {
-            if (wdata && wdata['gestures-' + gesture + '-oid']) {
-                var oid = wdata['gestures-' + gesture + '-oid'];
-                if (oid) {
-                    var val = wdata['gestures-' + gesture + '-value'];
+            var oid = wdata['gestures-' + gesture + '-oid'];
+            var val = wdata['gestures-' + gesture + '-value'];
+
+            if (wdata && (oid || val)) {
+               
+                var isFunc = (val && val.indexOf('FUNC:')==0);
+                let funcName = undefined;
+                let funcParams = undefined;
+                
+                if (isFunc){
+                   val = val.substring(5);
+                   if (val.length ==0)isFunc=false;
+                   else{     
+                        funcParams = val.split(';');
+                        funcName = funcParams[0];
+                        funcParams=funcParams.slice(1);
+                      funcParams.unshift(id);  
+                    }
+                }
+
+                if (oid || isFunc) {
                     var delta = parseInt(wdata['gestures-' + gesture + '-delta']) || 10;
                     var limit = parseFloat(wdata['gestures-' + gesture + '-limit']) || false;
                     var max = parseFloat(wdata['gestures-' + gesture + '-maximum']) || 100;
                     var min = parseFloat(wdata['gestures-' + gesture + '-minimum']) || 0;
-                    var valState = that.states.attr(oid + '.val');
+                    var valState;
+                    if (isFunc)
+                          valState = 0;
+                     else valState = that.states.attr(oid + '.val');
                     var newVal = null;
                     var $indicator;
+
                     if (valState !== undefined && valState !== null) {
                         $wid.on('touchmove', function (evt) {
                             evt.preventDefault();
@@ -1601,6 +1622,26 @@ var vis = {
                         });
 
                         $$wid[gesture](function (data) {
+
+                            if (isFunc)
+                            {
+                             if (funcName=='OPENDIALOG' && (funcParams.length>1)){
+                                let wid=vis.widgets[id]?.wid;
+                               if (wid)
+                               { 
+                                let cloneprefix = id.substring(wid.length);   
+                                let dialogElem = funcParams[1] + cloneprefix + '_dialog';
+                                var $dlg =  $('#' + dialogElem );
+                                if ($dlg) $dlg.dialog('open');
+                              }
+                             }
+                             else {
+                                console.log(funcParams);
+                             window[funcName](funcParams);
+                             }
+                            return; 
+                           }
+
                             valState = that.states.attr(oid + '.val');
                             if (val === 'toggle') {
                                 if (valState === true) {
