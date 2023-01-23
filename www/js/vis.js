@@ -1584,15 +1584,16 @@ var vis = {
                 var isFunc = (val && val.indexOf('FUNC:')==0);
                 let funcName = undefined;
                 let funcParams = undefined;
-                
                 if (isFunc){
-                   val = val.substring(5);
-                   if (val.length ==0)isFunc=false;
+                   //Исхлодный формат:  FUNC:FuncNamre;Param1;Param2;...
+                   //При вызоме метода передаем: FuncName([modelwId; ClonePrecfix; Param1;Param2;...] ) 
+                   val = val.substring(5);  //удаляем  "FUNC:"
+                   if (val.length == 0)isFunc=false;
                    else{     
                         funcParams = val.split(';');
-                        funcName = funcParams[0];
-                        funcParams=funcParams.slice(1);
-                      funcParams.unshift(id);  
+                        funcName = funcParams[0];   
+                        funcParams=funcParams.slice(1); //удаояем из набора FuncName
+                        funcParams.unshift(id);         //Добавляем primId
                     }
                 }
 
@@ -1625,19 +1626,25 @@ var vis = {
 
                             if (isFunc)
                             {
-                             if (funcName=='OPENDIALOG' && (funcParams.length>1)){
-                                let wid=vis.widgets[id]?.wid;
-                               if (wid)
-                               { 
-                                let cloneprefix = id.substring(wid.length);   
-                                let dialogElem = funcParams[1] + cloneprefix + '_dialog';
+                              //id полное имя примитива (с приставкой клона) = modelwId_ClonePrefix   пример: w00032_w7557  
+                              //Выделяем modelwId и _ClonePrefix
+                              let senderModelwid = id;
+                              let clonePrefix = "";
+                              let p = id.indexOf('_');
+                               if (p > 0)
+                                { senderModelwid=id.substring(0,p);
+                                  clonePrefix= id.substring(p);
+                                }                                
+
+                           
+                              if (funcName=='OPENDIALOG' && (funcParams.length>1)){
+                                let dialogElem = funcParams[1] + clonePrefix + '_dialog';
                                 var $dlg =  $('#' + dialogElem );
                                 if ($dlg) $dlg.dialog('open');
-                              }
                              }
                              else {
                                 console.log(funcParams);
-                             window[funcName](funcParams);
+                             window[funcName](senderModelwid, clonePrefix, funcParams);
                              }
                             return; 
                            }
