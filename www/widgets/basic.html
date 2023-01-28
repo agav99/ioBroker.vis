@@ -323,10 +323,12 @@
     });
 
     vis.binds.stateful = {
-        view: function (el, viewArr, persistent, notIfInvisible) {
+        view: function (el, viewArr, data) {
             var $this = $(el);
             var oid   = $this.attr('data-oid');
             var timer = null;
+      	    let persistent = data.attr('persistent');
+            let notIfInvisible = data.attr('notIfInvisible');
 
             function draw(val) {
                 timer = null;
@@ -337,7 +339,7 @@
                 } else {
                     $this.parent().find('div.vis-view').hide().appendTo($('#vis_container'));
                 }
-
+		        view = vis.getViewURI(data, view);  
                 let viewInfo=vis.parseViewURI(view); 
                 view = viewInfo.viewModelId;
                 if (vis.views[view]) {
@@ -2523,7 +2525,9 @@
             }
         %>
         <div class="vis-widget-body">
-            <div class="vis-view-container" data-oid="<%= data.attr('oid') %>" data-vis-contains="<%= vis.binds.stateful.value(viewArr, data.attr('oid')) %>" <%= (el) -> vis.binds.stateful.view(el, viewArr, data.attr('persistent'), data.attr('notIfInvisible')) %> />
+            <div class="vis-view-container" data-oid="<%= data.attr('oid') %>" 
+		data-vis-contains="<%=  vis.getViewURI(this.data, vis.binds.stateful.value(viewArr, data.attr('oid'))) %>" 
+		<%= (el) -> vis.binds.stateful.view(el, viewArr, data) %> />
         </div>
     </div>
 </script>

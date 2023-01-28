@@ -1874,15 +1874,15 @@ var vis = {
     },
 
 /***********************************************************************************/
-    getViewURI: function(widgetData){
+    getViewURI: function(widgetData, viewURI=undefined){
 
-        let viewURI = widgetData.attr('contains_view'); 
+        if (!viewURI) viewURI = widgetData.attr('contains_view')||"";
 
         //Если contains_view не содержит параметров "?xxx;xxx" и хотябы параметр "viewAttr1" контерйнера
         //определен, то изменяем "contains_view"
         //Проверка на viewAttr0 добавлена тк иначе все внутренние виджеты контейнеров будут иметь составное ID = WidgetID+ContainerID 
         //а это может сломать совместимость со старыми проектами, если ID использовалось в JS скрипте кадра 
-        if (viewURI && (viewURI.indexOf('?')<=0) && widgetData["viewAttr1"]){
+        if ((viewURI.indexOf('?')<=0) && widgetData["viewAttr1"]){
             viewURI=viewURI+'?'+widgetData.attr('wid')+';';
 
             let attrCount = widgetData.count;
@@ -1891,6 +1891,13 @@ var vis = {
                 if (i < attrCount) viewURI = viewURI + ';';
             }
         }    
+        else{
+          let p = viewURI.indexOf('?PWID');
+          if (p > 0)
+          {
+            viewURI = viewURI.replace('?PWID', '?'+widgetData.attr('wid'));
+          }
+        } 
         return viewURI;
     },
     /***********************************************************************************/
@@ -2219,8 +2226,10 @@ parentContainerWidgetId: parentContainerWidgetId, //
                  $('#' + id).addClass("vis-widget-lock")
                  }*/
             }
-
+            
             $(document).trigger('wid_added', id);
+            $(document).trigger('wid_addedEx', [modelwid, viewInfo.exName, widget]);
+            
 
             //recursive render group members
             if (id[0] === 'g') {
