@@ -975,7 +975,8 @@ var vis = {
             return false;
         }
 
-        console.debug('render View:' + viewInfo.viewID);
+	if ((viewInfo.viewID != "")||(viewInfo.viewID != undefined))
+	  console.debug('render View:' + viewInfo.viewID);
 
         // try to render background
         // collect all IDs, used in this view and in containers
@@ -1230,7 +1231,7 @@ var vis = {
         if ($widget.length) {
             var that = this;
             
-            console.debug('  destroy widget: ' + widget + ' on '+viewDiv);
+            //console.debug('  destroy widget: ' + widget + ' on '+viewDiv);
 
             var $subContainers = $widget.find('.vis-view');  
             $subContainers.each(function () {
@@ -1304,7 +1305,7 @@ var vis = {
         if (viewDiv==view && viewInfo.isClone)
            viewDiv=viewInfo.viewID;
         
-        console.debug('reRenderWidget start widget:' + widgetId + ' on:'+viewInfo.viewID);
+        //console.debug('reRenderWidget start widget:' + widgetId + ' on:'+viewInfo.viewID);
 
         this.destroyWidget(viewDiv, view, widgetId); //viewDiv, view - not used there now
 
@@ -1330,7 +1331,7 @@ var vis = {
 
         updateContainers && this.updateContainers(viewDiv, view, widgetId);  
 
-        console.debug('reRenderWidget done widget:' + widgetId + ' on:'+viewInfo.viewID);
+        //console.debug('reRenderWidget done widget:' + widgetId + ' on:'+viewInfo.viewID);
     },
 
     //******************************************************************* */
@@ -1937,7 +1938,7 @@ var vis = {
         let modelwid=id;           //save value, need it later 
         id = id + viewInfo.exName; //to make unique wid if we have cloned view
 
-        console.debug((viewInfo.isClone?'  ':'')+'render widget:'+id+'   on: '+viewInfo.viewID);
+        //console.debug((viewInfo.isClone?'  ':'')+'render widget:'+id+'   on: '+viewInfo.viewID);
 
         //try get savedWidgetInfo    
         var savedWidgetInfo = this.widgets[id];  //can be undefine 
@@ -1954,7 +1955,7 @@ var vis = {
             
             //Getting clone model first time 
             if (!savedWidgetInfo || !savedWidgetInfo.widgetModelClone){
-                console.debug('  cloning widget model');
+                //console.debug('  cloning widget model');
                 widget = JSON.parse(JSON.stringify(widget));  //make copy          
            
                 //clone_updateWidgetAttributes(widget, viewInfo);
@@ -3243,7 +3244,7 @@ parentContainerWidgetId: parentContainerWidgetId, //
     // on ALL view loaded or not!
     updateAllBindingWidgetAttrbyTagID:  function(tagid,  checkEx=false, callback=undefined){
 
-        console.debug('     updateAllBindingWidgetAttrbyTagID: '+tagid)
+        //console.debug('     updateAllBindingWidgetAttrbyTagID: '+tagid)
         var that=this;
 
         if (this.bindings[tagid]) {
@@ -4001,7 +4002,7 @@ parentContainerWidgetId: parentContainerWidgetId, //
 
                 var that = this;
                 this.conn._socket.emit('getStates', oid, function (error, data) {
-                    console.log('Create inner vis object ' + oid + 'at runtime');
+                    //console.log('Create inner vis object ' + oid + 'at runtime');
                     that.updateStates(data);
                     that.conn.subscribe(oid);
 
@@ -4317,7 +4318,7 @@ function main($, onReady) {
             if (vis.states[_id + '.val'] === undefined || vis.states[_id + '.val'] === null) {
                 
                 if (!_id || !_id.match(/^dev\d+$/)) {
-                    console.log('Create inner vis object ' + _id);
+                    //console.log('Create inner vis object ' + _id);
                 }
 
                 if (vis.editMode) {

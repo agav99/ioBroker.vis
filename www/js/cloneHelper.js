@@ -23,7 +23,7 @@ function replaceViewParamAttr(inputStr, viewParamsList) {
                match = true;
            }
        });
-       if (match) console.debug('     Replaced ' + inputStr + ' with ' + newString + ' (based on ' + ms + ')');
+       //if (match) console.debug('     Replaced ' + inputStr + ' with ' + newString + ' (based on ' + ms + ')');
    }
    return {doesMatch: match, newString: newString};
 }
