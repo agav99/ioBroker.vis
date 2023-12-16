@@ -117,28 +117,32 @@
                 vis.binds.swipe.loadSwipeScripts(function () {
                     $view.swipe({
                         swipeLeft: function () {
-                            vis.changeView(data['left_nav_view'], data['left_nav_view'], {
-                                effect: data['left_out_effect'],
-                                options: {
-                                    direction: data['left_out_eff_opt'],
-                                    queue: false
-                                }, duration: $div.attr('duration')
-                            }, {
-                                effect: data['left_in_effect'],
-                                options: {direction: data['left_in_eff_opt'], queue: false},
-                                duration: $div.attr('duration')
-                            }, true)
+                            vis.changeViewS(data['left_nav_view'], 
+                                           {
+                                            effect: data['left_out_effect'],
+                                            options: {direction: data['left_out_eff_opt'], queue: false},
+                                            duration: $div.attr('duration')
+                                           },
+                                           {
+                                            effect: data['left_in_effect'],
+                                            options: {direction: data['left_in_eff_opt'], queue: false},
+                                            duration: $div.attr('duration')
+                                           }, 
+                                           true)
                         },
-                        swipeRight: function () {
-                            vis.changeView(data['right_nav_view'], data['right_nav_view'], {
-                                effect: data['right_out_effect'],
-                                options: {direction: data['right_out_eff_opt'], queue: false},
-                                duration: $div.attr('duration')
-                            }, {
-                                effect: data['right_in_effect'],
-                                options: {direction: data['right_in_eff_opt'], queue: false},
-                                duration: $div.attr('duration')
-                            }, true)
+                        swipeRightS: function () {
+                            vis.changeViewS(data['right_nav_view'],
+                                           {
+                                            effect: data['right_out_effect'],
+                                            options: {direction: data['right_out_eff_opt'], queue: false},
+                                            duration: $div.attr('duration')
+                                           },
+                                           {
+                                            effect: data['right_in_effect'],
+                                            options: {direction: data['right_in_eff_opt'], queue: false},
+                                            duration: $div.attr('duration')
+                                           }, 
+                                           true)
                         }
                     });
                 });

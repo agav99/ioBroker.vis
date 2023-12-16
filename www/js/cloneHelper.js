@@ -23,7 +23,9 @@ function replaceViewParamAttr(inputStr, viewParamsList) {
                match = true;
            }
        });
-       //if (match) console.debug('     Replaced ' + inputStr + ' with ' + newString + ' (based on ' + ms + ')');
+       if (match){
+        console.debug('             Replaced "' + inputStr.replace(/(\r\n|\n|\r)/gm, "") + '" with "' + newString.replace(/(\r\n|\n|\r)/gm, "") + '" (based on ' + ms + ')');
+       }
    }
    return {doesMatch: match, newString: newString};
 }
@@ -240,21 +242,30 @@ function clone_appendWidgetAnimateInfo(vis, modelwid, wid, viewInfo){
     //For widget "wid" clear  arrays: visibilityClone,signalsClone,lastChangesClone
     //This array actual only for clone Widget
     function clone_clearWidgetAnimateInfo(vis, wid){
-        
+
       //visibilityClone
       for (var tagid in vis.clones.visibility){
-          if (!vis.clones.visibility.hasOwnProperty(tagid))
-              continue;
-              
-          for (let i=0; i < vis.clones.visibility[tagid].length; i++) {
-              if (vis.clones.visibility[tagid][i].widget == wid){
-               vis.clones.visibility[tagid].splice(i,1);
+         //Цикл по всем переменным привязанным к управлению свойства Visible 
+         //tagA=[wid_A, wid_B, wid_C,....]    
+         //tagB=[wid_A, wid_C, wid_D,....]    
+
+         if (!vis.clones.visibility.hasOwnProperty(tagid))
+            continue;
+          
+         //Для каждгого тега смотри используется ли он в удаляемом виджете 
+         for (let i=0; i < vis.clones.visibility[tagid].length; i++) {
+            if (vis.clones.visibility[tagid][i].widget == wid){
+               //удаляем из массива 
+                vis.clones.visibility[tagid].splice(i,1);
                   
-                  if (vis.clones.visibility[tagid].length==0)
-                      delete vis.clones.visibility.tagid;
-                  break;
-              }
-          }
+               //Если массив пустой, удаляем и само свойсво
+               if (vis.clones.visibility[tagid].length==0)
+                     delete vis.clones.visibility.tagid;
+
+               //тк к Visible виджета может быть привязано только одна переменная  
+               break;
+            }
+         }
       };
 
       let needDeleted=[];
@@ -272,6 +283,7 @@ function clone_appendWidgetAnimateInfo(vis, modelwid, wid, viewInfo){
                }
             }
          }
+
          for (let i=0; i < needDeleted.length; i++) 
             delete vis.clones.signals[needDeleted[i]];
       } 

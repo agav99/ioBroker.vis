@@ -39,6 +39,7 @@ function getAttributPrefix(attrValue){
 
 /************************************************************** */
 //Parse viewURI  format: viewModelId?Param1;Param2;...   оr only:  viewModelId
+//Вернет класс с разобранными полями  viewURI
 function parseViewURI (viewURI){
   let resViewName=viewURI;
   let resViewParams=[];     
@@ -56,16 +57,17 @@ function parseViewURI (viewURI){
      if (resExName.length>0) resExName='_'+resExName;
    }
                                              //Example for: "PageA?Param1;Param2;"
-  return {viewModelId: resViewName,          //= "PageA"
+  return {viewURI : viewURI,                 //= "PageA?Param1;Param2;" (исходное значение)
+          viewModelId: resViewName,          //= "PageA"
           params  : resViewParams,           //array = [Param1;Param2]
           exName  : resExName,               //used to create unique DivID for Clons of View  = "_Param1"  (not contain forbidden chars)
-          viewURI : viewURI,                 //= "PageA?Param1;Param2;"
           isClone : resExName.length>0,      //= true if URI has extra params
-          viewID  : resViewName + resExName  //= "PageA_Param1Param2"
+          viewID  : resViewName + resExName  //= "PageA_Param1Param2" (Это DivId)
          }
  }
 
 /************************************************************** */
+//PRIVATE
 function replaceGroupAttr(inputStr, groupAttrList) {
     var newString = inputStr;
     var match = false;
@@ -84,6 +86,7 @@ function replaceGroupAttr(inputStr, groupAttrList) {
 
 /************************************************************** */
 // replace  "groupAttr" substring of  attribute value 'inputStr'  for child Widget of group  'groupId' 
+//PRIVATE
 function checkForGroupAttr(vis, inputStr, groupId, viewModelId){
     var resStr = inputStr;
     if (groupId){
@@ -469,6 +472,7 @@ function getUsedObjectIDs(views, isByViews) {
         console.log('Check why views are not yet loaded!');
         return null;
     }
+    console.warn('________INIT PROJECT_____')
 
     var _views = isByViews ? {} : null;  //null for EditorMode.  After sets this object  to vis.subscribing.byViews{}[]->tagIDs  and for EditMode changing to {}
                                          //Same as IDs[], but groupig by ViewName.

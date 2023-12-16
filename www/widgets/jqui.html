@@ -1296,16 +1296,19 @@
                     var $inputPass = $('#inp_NavPw');
                     if (data._data.Password === $inputPass.val()) {
                         $('#NavPwDialog').remove();
-                        vis.changeView(data.attr('nav_view'), data.attr('nav_view'), {
-                                    effect: data.attr('hide_effect'),
-                                    options: {},
-                                    duration: data.attr('hide_duration')
-                                }, {
-                                    effect: data.attr('show_effect'),
-                                    options: {},
-                                    duration: data.attr('show_duration')
-                                },
-                                data.attr('sync'));
+                        vis.changeViewS(data.attr('nav_view'), 
+                                       {
+                                        effect: data.attr('hide_effect'),
+                                        options: {},
+                                        duration: data.attr('hide_duration')
+                                       }, 
+                                       {
+                                        effect: data.attr('show_effect'),
+                                        options: {},
+                                        duration: data.attr('show_duration')
+                                       },
+                                       data.attr('sync')
+                                       );
                     } else {
                         $inputPass.val('');
                         var bg = $inputPass.data('bg');

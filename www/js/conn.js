@@ -28,7 +28,7 @@ var servConn = {
     _onConnChange:      null,
     _onUpdate:          null,
     _isConnected:       false,
-    _disconnectedSince: null,
+    _disconnectedSince: null,  //disconnect DateTime 
     _connCallbacks:     {
         onConnChange:   null,
         onUpdate:       null,
@@ -46,7 +46,7 @@ var servConn = {
     _type:              'socket.io', // [SignalR | socket.io | local]
     _timeout:           0,           // 0 - use transport default timeout to detect disconnect
     _reconnectInterval: 10000,       // reconnect interval
-    _reloadInterval:    30,          // if connection was absent longer than 30 seconds
+    _reloadInterval:    30,          // if connection was absent longer than 30 seconds  -> RELOAD PAGE
     _reconnectionCount: 0,           // if we have many reconnections in a row, try to reload instead - workaround for https://github.com/ioBroker/ioBroker.vis/issues/332
     _cmdData:           null,
     _cmdInstance:       null,
@@ -76,6 +76,7 @@ var servConn = {
     setReconnectInterval: function (interval){
         this._reconnectInterval = parseInt(interval, 10);
     },
+    //**************************************************************** */
     _checkConnection: function (func, _arguments) {
         if (!this._isConnected) {
             console.log('No connection!');
@@ -94,6 +95,7 @@ var servConn = {
             return true;
         }
     },
+    //**************************************************************** */
     _monitor:         function () {
         if (this._timer) {
             return;
@@ -113,10 +115,11 @@ var servConn = {
             that._monitor();
         }, 10000);
     },
+    //**************************************************************** */
     _onAuth:          function (objectsRequired, isSecure) {
         var that = this;
 
-        this._isSecure = isSecure;
+        this._isSecure = isSecure;  //приходит null
 
         if (this._isSecure) {
             that._lastTimer = Date.now();
@@ -143,39 +146,66 @@ var servConn = {
             }, 0);
         }
     },
+    /******************************************************************************************** */
     reconnect:        function (connOptions) {
         var that = this;
-        if (++this._reconnectionCount >= 5) {
+        //если за 5 раз не получилось переподклюдиться то перезагрузка страницы
+        /*if (++this._reconnectionCount >= 5) {
             this._reconnectionCount = 0; // reset counter
             // try reload instead
             this.reload();
             return;
-        }
+        }*/
+
         // reconnect
-        if ((!connOptions.mayReconnect || connOptions.mayReconnect()) && !this._connectInterval) {
-            this._connectInterval = setInterval(function () {
+        if ((!connOptions.mayReconnect || connOptions.mayReconnect()) && !this._countIntervalTimer) {
+           
+            /*this._connectIntervalTimer = setInterval(function () {
                 console.log('Trying connect...');
                 that._socket.connect();
                 that._countDown = Math.floor(that._reconnectInterval / 1000);
                 if (typeof $ !== 'undefined') {
                     $('.splash-screen-text').html(that._countDown + '...').css('color', 'red');
                 }
-            }, this._reconnectInterval);
+            }, this._reconnectInterval);*/
 
+            //Показывает время ожидания до рекконекта 
             this._countDown = Math.floor(this._reconnectInterval / 1000);
             if (typeof $ !== 'undefined') {
                 $('.splash-screen-text').html(this._countDown + '...');
             }
 
-            this._countInterval = setInterval(function () {
+            let lastConnect=Date.now();
+            
+            this._countIntervalTimer = setInterval(function () {
                 that._countDown--;
+                
+                let display=that._countDown
+                if (that._countDown===0){
+                  display='reconnect';
+                }
+
                 if (typeof $ !== 'undefined') {
-                    $('.splash-screen-text').html(that._countDown + '...');
+                    $('.splash-screen-text').html(display + '...');
+                }
+
+                let now =Date.now();
+                let dif = now - lastConnect;
+                //console.log('Ожидание переподключеия. Прошло с последней попытки: '+dif)
+
+                if (dif >= that._reconnectInterval){
+                    clearInterval(that._countIntervalTimer);
+                    that._countIntervalTimer = null;
+                    console.log('Trying connect...');
+                    that._socket.connect();
                 }
             }, 1000);
         }
     },
+    /******************************************************************************************** */
     reload:           function () {
+        console.warn('********************** RELOAD *****************************'+Date.now());
+
         if (window.location.host === 'iobroker.net' ||
             window.location.host === 'iobroker.biz' ||
             window.location.host === 'iobroker.pro') {
@@ -184,6 +214,7 @@ var servConn = {
             window.location.reload();
         }
     },
+    /******************************************************************************************** */
     init:             function (connOptions, connCallbacks, objectsRequired, autoSubscribe) {
         var that = this; // support of old safari
         // init namespace
@@ -275,6 +306,7 @@ var servConn = {
 
             this._socket.on('connect', function () {
                 that._reconnectionCount = 0; // reset counter
+                console.warn('CON_EVENT: connect'); 
 
                 if (that._disconnectedSince) {
                     var offlineTime = Date.now() - that._disconnectedSince;
@@ -288,14 +320,18 @@ var servConn = {
                     that._disconnectedSince = null;
                 }
 
-                if (that._connectInterval) {
-                    clearInterval(that._connectInterval);
-                    that._connectInterval = null;
+                //Таймер переподключений        
+                /*if (that._connectIntervalTimer) {
+                    clearInterval(that._connectIntervalTimer);
+                    that._connectIntervalTimer = null;
+                }*/
+                //Таймер  счетчика
+                if (that._countIntervalTimer) {
+                    clearInterval(that._countIntervalTimer);
+                    that._countIntervalTimer = null;
                 }
-                if (that._countInterval) {
-                    clearInterval(that._countInterval);
-                    that._countInterval = null;
-                }
+
+                //затемненный экран с крутилкой     
                 var elem = document.getElementById('server-disconnect');
                 if (elem) {
                     elem.style.display = 'none';
@@ -360,11 +396,13 @@ var servConn = {
                     $('.splash-screen-text').css('color', '#002951');
                 }
 
+                console.warn('CON_EVENT: connect_error:'+ new Date());
                 that.reconnect(connOptions);
             });
 
             this._socket.on('disconnect', function () {
                 that._disconnectedSince = Date.now();
+                console.warn('CON_EVENT: disconnect on:'+that._disconnectedSince);
 
                 // called only once when connection lost (and it was here before)
                 that._isConnected = false;
@@ -395,7 +433,7 @@ var servConn = {
             // after reconnect the "connect" event will be called
             this._socket.on('reconnect', function () {
                 var offlineTime = Date.now() - that._disconnectedSince;
-                console.log('was offline for ' + (offlineTime / 1000) + 's');
+                console.log('CON_EVENT: RECONNECT. was offline for ' + (offlineTime / 1000) + 's');
 
                 // reload whole page if no connection longer than one minute
                 if (that._reloadInterval && offlineTime > that._reloadInterval * 1000) {
@@ -519,10 +557,29 @@ var servConn = {
             callback && callback(version || error);
         });
     },
+    asyncGetVersion:    async  function(){
+        if (!this._checkConnection('getVersion', arguments)) {
+            return;
+        }
+
+        return new Promise((resolve, reject) => {
+            this._socket.emit('getVersion', function (error, version) {
+                //callback && callback(version || error);
+                resolve(version || error)
+            });
+
+        })
+    },
     subscribe:        function (idOrArray, callback) {
         if (!this._checkConnection('subscribe', arguments)) {
             return;
         }
+
+        let idCount=1;
+        if (Array.isArray(idOrArray)){
+            idCount = idOrArray.length;
+        }
+        console.debug("\u001b[1;43m   conn.SUBSCRIBE > count:" + idCount);
 
         this._socket.emit('subscribe', idOrArray, callback);
     },
@@ -530,6 +587,12 @@ var servConn = {
         if (!this._checkConnection('unsubscribe', arguments)) {
             return;
         }
+
+        let idCount=1;
+        if (Array.isArray(idOrArray)){
+            idCount = idOrArray.length;
+        }
+        console.debug("\u001b[1;43m   conn.UnSUBSCRIBE > count:" + idCount);
 
         this._socket.emit('unsubscribe', idOrArray, callback);
     },
@@ -547,6 +610,20 @@ var servConn = {
             callback && callback(version || error);
         });
     },
+
+
+    readFileAsyc:  async  function (filename,  isRemote) {
+        return new Promise((resolve, reject) => {
+            this.readFile(filename, function (err, data, filename, mimeType) {
+                resolve({err:err, //nullable
+                         data:data, //nullable
+                         filename:filename, //nullable|undefined
+                         mimeType:mimeType //nullable|undefined
+                        });
+            }, isRemote)
+        })
+    },
+
     readFile:         function (filename, callback, isRemote) {
         if (!callback) {
             throw 'No callback set';
@@ -561,6 +638,7 @@ var servConn = {
             }
         } else {
             if (!this._checkConnection('readFile', arguments)) {
+                callback("not checkConnection readFile", null);
                 return;
             }
 
@@ -767,6 +845,9 @@ var servConn = {
         }
         this._socket.emit('sendTo', instance, command, payload, callback);
     },
+    //****************************************************************************/
+    //Запрос состояния по массиву IDs и возвращаем в data
+    //Если предыд запрос еще не завершен, то  текущий откладываем на 50 мсек
     // callback(err, data)
     getStates:        function (IDs, callback) {
         if (typeof IDs === 'function') {
@@ -774,17 +855,26 @@ var servConn = {
             IDs = null;
         }
 
+        if (IDs == null){
+          //Значит получаем ВСЕ переменные     
+        }
+
         if (this._type === 'local') {
             return callback(null, []);
         } else {
             if (!this._checkConnection('getStates', arguments)) {
+                callback && callback("error checkConnection:getStates"); 
                 return;
             }
             var that = this;
+
             this.gettingStates = this.gettingStates || 0;
+
+            //Значит выполняется предыдущий запрос, откладываем текущий на  сек
             if (this.gettingStates > 0) {
                 // fix for slow devices -> if getStates still in progress, wait and try again
                 console.log('Trying to get states again, because emitted getStates still pending');
+
                 setTimeout(function () {
                     that.getStates(IDs, callback);
                 }, 50);
@@ -795,6 +885,7 @@ var servConn = {
 
             this._socket.emit('getStates', IDs, function (err, data) {
                 that.gettingStates--;
+               
                 if (err || !data) {
                     callback && callback(err || 'Authentication required');
                 } else if (callback) {
@@ -803,6 +894,20 @@ var servConn = {
             });
         }
     },
+
+    getStatesAsync: async function (IDs) {
+        return new Promise((resolve, reject) => {
+
+                this.getStates(IDs, function (err, data){
+                    resolve({err:err,   //string || null
+                             data:data  //obj | undefined
+                            });
+                });
+        });
+    },
+
+
+    //****************************************************************************/
     _fillChildren:    function (objects) {
         var items = [];
 
@@ -1121,6 +1226,17 @@ var servConn = {
             callback = useCache;
             useCache = false;
         }
+
+       this.getGroupsAsync(groupName,useCache)
+       .then(function(result) {
+           callback && callback(result.err, result.groups)
+        },
+        function(error){
+           callback && callback(error, undefined)
+        })        
+    },
+
+    getGroupsAsync:    async function (groupName=null, useCache=false){
         groupName = groupName || '';
 
         // If cache used
@@ -1128,38 +1244,60 @@ var servConn = {
             if (typeof storage !== 'undefined') {
                 var groups = this._groups || storage.get('groups');
                 if (groups) {
-                    return callback(null, groups);
+                    return { err: null,
+                             groups: groups
+                           }
                 }
             } else if (this._groups) {
-                return callback(null, this._groups);
+                return  { err: null,
+                          groups: this._groups
+                        }
             }
         }
+
         if (this._type === 'local') {
-            return callback(null, []);
-        } else {
-            var that = this;
-            // Read all enums
-            this._socket.emit('getObjectView', 'system', 'group', {startkey: 'system.group.' + groupName, endkey: 'system.group.' + groupName + '\u9999'}, function (err, res) {
-                if (err) {
-                    return callback(err);
-                }
-                var groups = {};
-                for (var i = 0; i < res.rows.length; i++) {
-                    var obj = res.rows[i].value;
-                    groups[obj._id] = obj;
-                }
-                if (that._useStorage) {
-                    that._groups  = groups;
-
-                    if (typeof storage !== 'undefined') {
-                        storage.set('groups', groups);
+            return { err: null,
+                     groups: []
+                   }
+        }; 
+        
+        var that = this;
+        // Read all enums
+        return new Promise((resolve, reject) => {
+            this._socket.emit('getObjectView', 'system', 'group', 
+                            {startkey: 'system.group.' + groupName, 
+                               endkey: 'system.group.' + groupName + '\u9999'
+                            }, 
+                function (err, res) {
+                    if (err) {
+                        resolve({ err: err,
+                                  groups: undefined
+                                })
+                        return;
                     }
-                }
 
-                callback(null, groups);
-            });
-        }
+                    var groups = {};
+                    for (var i = 0; i < res.rows.length; i++) {
+                        var obj = res.rows[i].value;
+                        groups[obj._id] = obj;
+                    }
+
+                    if (that._useStorage) {
+                        that._groups  = groups;
+
+                        if (typeof storage !== 'undefined') {
+                            storage.set('groups', groups);
+                        }
+                    }
+
+                    resolve({ err: null,
+                              groups: groups
+                            })
+
+                });
+        });
     },
+
     getEnums:         function (enumName, useCache, callback) {
         if (typeof enumName === 'function') {
             callback = enumName;
@@ -1213,6 +1351,15 @@ var servConn = {
     },
     getLoggedUser:    function (callback) {
         this._socket.emit('authEnabled', callback);
+    },
+    getLoggedUserAsync: async  function () {
+        return new Promise((resolve, reject) => {
+            this._socket.emit('authEnabled', function (authReq, user) {
+                resolve({authReq:authReq,
+                         user:user
+                        });
+            });
+        });
     },
     // return time when the objects were synchronized
     getSyncTime:      function () {
@@ -1321,38 +1468,64 @@ var servConn = {
     },
     getConfig:        function (useCache, callback) {
         if (!this._checkConnection('getConfig', arguments)) {
-            return;
+            return; 
         }
 
         if (typeof useCache === 'function') {
             callback = useCache;
             useCache = false;
         }
+
+        this.getConfigAsync(groupName,useCache)
+        .then(function(result){
+            callback && callback(result.err, result.config)
+         },
+         function(error){
+            callback && callback(error, undefined)
+         })    
+    },
+
+    getConfigAsync:  async function (useCache) {
+        
         if (this._useStorage && useCache) {
             if (typeof storage !== 'undefined') {
                 var objects = storage.get('objects');
                 if (objects && objects['system.config']) {
-                    return callback(null, objects['system.config'].common);
+                    return {err: null,
+                            config: objects['system.config'].common
+                           }
                 }
             } else if (this._objects && this._objects['system.config']) {
-                return callback(null, this._objects['system.config'].common);
+                     return {err: null,
+                             config: this._objects['system.config'].common
+                            }
+                
             }
         }
-        var that = this;
-        this._socket.emit('getObject', 'system.config', function (err, obj) {
-            if (callback && obj && obj.common) {
-                if (that._useStorage && typeof storage !== 'undefined') {
-                    var objects = storage.get('objects') || {};
-                    objects['system.config'] = obj;
-                    storage.set('objects', objects);
-                }
 
-                callback(null, obj.common);
-            } else {
-                callback('Cannot read language');
-            }
+        var that = this;
+        return new Promise((resolve, reject) => {
+            this._socket.emit('getObject', 'system.config', function (err, obj) {
+
+                if (obj && obj.common) {
+                    if (that._useStorage && typeof storage !== 'undefined') {
+                        var objects = storage.get('objects') || {};
+                        objects['system.config'] = obj;
+                        storage.set('objects', objects);
+                    }
+
+                    resolve({err:null,
+                             config: obj.common
+                            });
+                }else {
+                    resolve( {err:'Cannot read language',
+                              config: undefined
+                             });
+                }
+            });
         });
     },
+
     sendCommand:      function (instance, command, data, ack) {
         this.setState(this.namespace + '.control.instance', {val: instance || 'notdefined', ack: true});
         this.setState(this.namespace + '.control.data',     {val: data,    ack: true});

@@ -2570,7 +2570,7 @@ vis = $.extend(true, vis, {
                 position: { my: "left top", at: "left bottom", of: "#view_select_list", collision: "none" },
                 change: function (event, ui) {
                     var view = $(this).val();
-                    that.changeView(view, view);
+                    that.changeViewS(view);
                 },
                 close: function( event, ui ) {
                     tempList.selectmenu('destroy');
@@ -2636,7 +2636,7 @@ vis = $.extend(true, vis, {
             var view = $(this).attr('id').replace('view_tab_', '');
             $('.view-select-tab').removeClass('ui-tabs-active ui-state-active');
             $(this).addClass('ui-tabs-active ui-state-active');
-            that.changeView(view, view);
+            that.changeViewS(view);
         });
         this.editBuildSelectView();
     },
@@ -2869,7 +2869,7 @@ vis = $.extend(true, vis, {
             change: function () {
                 var theme = $(this).val();
                 that.views[that.activeView].settings.theme = theme;
-                that.addViewStyle(that.activeViewDiv, that.activeView, theme);
+                that.addViewStyle(that.activeViewDiv, theme);
                 //that.additionalThemeCss(theme);
                 that.save();
             }
@@ -3295,7 +3295,7 @@ vis = $.extend(true, vis, {
 
             //noinspection JSJQueryEfficiency
             $('#view_tab_' + that.activeView).removeClass('ui-tabs-active ui-state-active');
-            that.changeView(_view, _view);
+            that.changeViewS(_view);
 
             that.editBuildSelectView();
             //noinspection JSJQueryEfficiency
@@ -3315,7 +3315,7 @@ vis = $.extend(true, vis, {
         this.activeViewDiv = this.activeView;
         var that = this;
         this.renderView(_newName, _newName, function () {
-            that.changeView(_newName, _newName, function (_viewName, _view) {
+            that.changeViewS(_newName, function (_viewName, _view) {
                 // Rebuild tabs, select, selectCopyTo
                 $('#view_tab_' + oldName).attr('id', 'view_tab_' + _newName);
                 $('#view_tab_' + _newName).removeClass('sel_opt_' + oldName).addClass('ui-tabs-active ui-state-active sel_opt_' + _newName).html(newName);
@@ -3361,7 +3361,7 @@ vis = $.extend(true, vis, {
             this.$selectView.selectmenu({
                 change: function (event, ui) {
                     var view = $(this).val();
-                    that.changeView(view, view);
+                    that.changeViewS(view);
                 }
             }).selectmenu('menuWidget').parent().addClass('view-select-menu');
         } else {
@@ -3441,7 +3441,7 @@ vis = $.extend(true, vis, {
 
         this.saveRemote(function () {
             that.renderView(_dest, _dest, function (_view) {
-                that.changeView(_view, _view);
+                that.changeViewS(_view);
                 $('.view-select-tab').removeClass('ui-tabs-active ui-state-active');
 
                 that.editBuildSelectView();
@@ -3919,10 +3919,14 @@ vis = $.extend(true, vis, {
                        let viewURI = $container.attr('data-vis-contains');
                        let viewInfo=that.parseViewURI(viewURI);
                       
-                       that.changeView(viewInfo.viewModelId, viewInfo.viewModelId, undefined, undefined, true, function (_viewDiv, _view) {
-                        // deselect all
-                        that.inspectWidgets(_viewDiv, _view, []);
-                    });
+                       that.changeViewS(viewInfo.viewModelId,
+                                        undefined,
+                                        undefined, 
+                                        true, 
+                                        function (_viewDiv, _view) {
+                                            // deselect all
+                                            that.inspectWidgets(_viewDiv, _view, []);
+                                        });
                     }
                 });
             };
@@ -3933,10 +3937,15 @@ vis = $.extend(true, vis, {
                     var widgetId = $(this).attr('id');
                     if (widgetId[0] !== 'g') return;
 
-                    that.changeView(widgetId, view, undefined, undefined, true, function (_viewDiv, _view) {
-                        // deselect all
-                        that.inspectWidgets(_viewDiv, _view, []);
-                    });
+                    that.changeView(widgetId, 
+                                    view, 
+                                    undefined,
+                                    undefined, 
+                                    true, 
+                                    function (_viewDiv, _view) {
+                                        // deselect all
+                                        that.inspectWidgets(_viewDiv, _view, []);
+                                    });
                 });
             }
 
@@ -4520,6 +4529,7 @@ vis = $.extend(true, vis, {
             $('.vis-widget-edit-locked').removeClass('ui-selectee');
         }
     },
+    //*************************************************************************/
     // Init all edit fields for one view
     changeViewEdit:         function (viewDiv, view, noChange, callback) {
         //always save changes when changing views to ensure views are synced
@@ -4734,8 +4744,12 @@ vis = $.extend(true, vis, {
         } else {
             this.editResizeGroup(viewDiv, view);
         }
+
+        //callback
         if (typeof callback === 'function') callback(viewDiv, view);
     },
+
+    //*********************************************************************** */
     destroyGroupEdit:       function (viewDiv, view) {
         // destroy group view and view of group
         this.views[view].activeWidgets = [viewDiv];
@@ -4743,11 +4757,14 @@ vis = $.extend(true, vis, {
         // change size of group
         //var rect = this.editWidgetsRect(viewDiv, view, viewDiv);
         this.destroyView(viewDiv, view);
-        this.destroyView(view,    view);
+        //this.destroyView(view,    view);
+        var $view = $('#visview_' + view);
+        $view.remove();
 
         // group has percent as position
         //this.editApplySize(viewDiv, view, viewDiv, rect.width, rect.height);
     },
+    //*********************************************************************** */
     editApplyPosition:      function (viewDiv, view, wid, top, left) {
         var oldT = this.views[view].widgets[wid].style.top;
         let TopPrefix = getAttributSufix(oldT);
@@ -7103,7 +7120,7 @@ vis = $.extend(true, vis, {
 
           this.viewNavigatePos = i;
           this.viewNavigatePos = this._navigateViewHistindex(true); //еще один шаг назад
-          this.changeView(viewName, viewName); 
+          this.changeViewS(viewName); 
     }, 
 });
 

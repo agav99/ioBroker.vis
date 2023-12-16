@@ -1826,7 +1826,7 @@ vis = $.extend(true, vis, {
             //Update containers
             if (wdata.type === 'views') {
                 // Set ths views for containers
-                that.updateContainers(wdata.view, wdata.view);
+                that.updateContainersS(wdata.view);
             }
         });
 
