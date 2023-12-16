@@ -1,7 +1,7 @@
 {
   "name": "iobroker.vis",
   "description": "Graphical user interface for ioBroker.",
-  "version": "1.4.21",
+  "version": "1.4.22",
   "author": {
     "name": "agav fork",
     "email": "dogafox@gmail.com"
