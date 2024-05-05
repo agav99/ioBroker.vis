@@ -336,12 +336,8 @@
 
                 //$this - это объет "div.vis-view-container" 
                 //перемещаем предыдущую страницу в корнь vis_container
-                if (!persistent) {
-                    //$this.parent().find('div.vis-view').find('div.vis-view').remove();
-                    $this.parent().find('div.vis-view').hide().appendTo($('#vis_container')); //for destroy hidden view in findAndDestroyViews()  
-                } else {
-                    $this.parent().find('div.vis-view').hide().appendTo($('#vis_container'));
-                }
+                $this.parent().find('div.vis-view').hide().appendTo($('#vis_container')); //for destroy hidden view in findAndDestroyViews()  
+ 
                 view = vis.getViewURI(data, view);    
                 let viewInfo=vis.parseViewURI(view); 
                 view = viewInfo.viewModelId;
@@ -377,8 +373,12 @@
             }
             
             function onChange(e, newVal) {
-                if (newVal === 'true'  || newVal === true)  newVal = 1;
-                if (newVal === 'false' || newVal === false) newVal = 0;
+                if (newVal === 'true'  || newVal === true) {
+                    newVal = 1;
+                }
+                if (newVal === 'false' || newVal === false) {
+                    newVal = 0;
+                }
                 if (notIfInvisible && !$this.is(':visible')) {
                     return;
                 }
@@ -386,9 +386,7 @@
                 if (timer) {
                     clearTimeout(timer)
                 }
-                timer = setTimeout(function () {
-                    draw(newVal);
-                }, 50);
+                timer = setTimeout(() => draw(newVal), 50);
             }
 
             if (oid) {

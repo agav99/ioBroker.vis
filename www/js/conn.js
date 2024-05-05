@@ -12,11 +12,23 @@
 /* global socketNamespace */
 /* global socketUrl */
 /* global socketSession */
-/* global storage */
 /* jshint -W097 */
 /* jshint strict: false */
 
 'use strict';
+
+window.getStoredObjects = function (name) {
+    let objects = window.localStorage.getItem(name || 'objects');
+    if (objects) {
+        try {
+            return JSON.parse(objects);
+        } catch (e) {
+            return null;
+        }
+    } else {
+        return null;
+    }
+}
 
 // The idea of servConn is to use this class later in every addon.
 // The addon just must say, what must be loaded (values, objects, indexes) and
@@ -229,6 +241,11 @@ var servConn = {
 
         if (autoSubscribe !== undefined) {
             this._autoSubscribe = autoSubscribe;
+        }
+
+        // Correct "port only" url given from web adapter:
+        if (window.socketUrl && window.socketUrl[0] === ':') {
+            window.socketUrl = window.location.protocol + '//' + window.location.hostname + window.socketUrl;
         }
 
         // To start vis as local use one of:
@@ -444,15 +461,15 @@ var servConn = {
 
             this._socket.on('objectChange', function (id, obj) {
                 // If cache used
-                if (that._useStorage && typeof storage !== 'undefined') {
-                    var objects = that._objects || storage.get('objects');
+                if (that._useStorage) {
+                    let objects = that._objects || window.getStoredObjects();
                     if (objects) {
                         if (obj) {
                             objects[id] = obj;
                         } else if (objects[id]) {
                             delete objects[id];
                         }
-                        storage.set('objects',  objects);
+                        window.localStorage.setItem('objects', JSON.stringify(objects));
                     }
                 }
 
@@ -630,15 +647,10 @@ var servConn = {
         }
 
         if (this._type === 'local') {
-            try {
-                var data = storage.get(filename);
-                callback(null, data ? JSON.parse(storage.get(filename)) : null);
-            } catch (err) {
-                callback(err, null);
-            }
+            const data = window.getStoredObjects(filename);
+            callback(null, data || null);
         } else {
             if (!this._checkConnection('readFile', arguments)) {
-                callback("not checkConnection readFile", null);
                 return;
             }
 
@@ -753,7 +765,7 @@ var servConn = {
             mode = null;
         }
         if (this._type === 'local') {
-            storage.set(filename, JSON.stringify(data));
+            window.localStorage.setItem(filename, JSON.stringify(data));
             callback && callback();
         } else {
             if (!this._checkConnection('writeFile', arguments)) {
@@ -962,14 +974,10 @@ var servConn = {
         }
         // If cache used
         if (this._useStorage && useCache) {
-            if (typeof storage !== 'undefined') {
-                var objects = this._objects || storage.get('objects');
+            let objects = this._objects || window.getStoredObjects();
                 if (objects) {
                     return callback(null, objects);
                 }
-            } else if (this._objects) {
-                return callback(null, this._objects);
-            }
         }
 
         if (!this._checkConnection('getObjects', arguments)) {
@@ -1031,11 +1039,9 @@ var servConn = {
                                     that._objects = data;
                                     that._enums = enums;
 
-                                    if (typeof storage !== 'undefined') {
-                                        storage.set('objects', data);
-                                        storage.set('enums', enums);
-                                        storage.set('timeSync', Date.now());
-                                    }
+                                    window.localStorage.setItem('objects', JSON.stringify(data));
+                                    window.localStorage.setItem('enums', JSON.stringify(enums));
+                                    window.localStorage.setItem('timeSync', Date.now().toString());
                                 }
 
                                 callback && callback(err, data);
@@ -1074,14 +1080,10 @@ var servConn = {
         var data = [];
 
         if (this._useStorage && useCache) {
-            if (typeof storage !== 'undefined') {
-                var objects = storage.get('objects');
+            const objects = window.getStoredObjects();
                 if (objects && objects[id] && objects[id].children) {
                     return callback(null, objects[id].children);
                 }
-            } else if (this._objects && this._objects[id] && this._objects[id].children) {
-                return callback(null, this._objects[id].children);
-            }
         }
 
         // Read all devices
@@ -1124,10 +1126,10 @@ var servConn = {
                     }
                     list.sort();
 
-                    if (that._useStorage && typeof storage !== 'undefined') {
-                        var objects = storage.get('objects') || {};
+                    if (that._useStorage) {
+                        let objects = window.getStoredObjects() || {};
 
-                        for (var id_ in data) {
+                        for (let id_ in data) {
                             if (data.hasOwnProperty(id_)) {
                                 objects[id_] = data[id_];
                             }
@@ -1158,7 +1160,7 @@ var servConn = {
                             }
                         }
 
-                        storage.set('objects', objects);
+                        window.localStorage.setItem('objects', JSON.stringify(objects));
                     }
 
                     callback && callback(err, list);
@@ -1185,15 +1187,11 @@ var servConn = {
             return callback('no id given');
 
         // If cache used
-        if (this._useStorage && useCache && typeof storage !== 'undefined') {
-            if (typeof storage !== 'undefined') {
-                var objects = this._objects || storage.get('objects');
+        if (this._useStorage && useCache) {
+            var objects = this._objects || window.getStoredObjects();
                 if (objects && objects[id]) {
                     return callback(null, objects[id]);
                 }
-            } else if (this._enums) {
-                return callback(null, this._enums);
-            }
         }
 
         var that = this;
@@ -1203,10 +1201,10 @@ var servConn = {
                 callback(err);
                 return;
             }
-            if (that._useStorage && typeof storage !== 'undefined') {
-                var objects = storage.get('objects') || {};
+            if (that._useStorage) {
+                var objects = window.getStoredObjects() || {};
                 objects[id] = obj;
-                storage.set('objects', objects);
+                window.localStorage.setItem('objects', JSON.stringify(objects));
             }
             return callback(null, obj);
         });
@@ -1241,19 +1239,14 @@ var servConn = {
 
         // If cache used
         if (this._useStorage && useCache) {
-            if (typeof storage !== 'undefined') {
-                var groups = this._groups || storage.get('groups');
-                if (groups) {
+            const groups = this._groups || window.getStoredObjects('groups');
+            if (groups) {
                     return { err: null,
                              groups: groups
                            }
                 }
-            } else if (this._groups) {
-                return  { err: null,
-                          groups: this._groups
-                        }
-            }
-        }
+         }
+        
 
         if (this._type === 'local') {
             return { err: null,
@@ -1284,10 +1277,7 @@ var servConn = {
 
                     if (that._useStorage) {
                         that._groups  = groups;
-
-                        if (typeof storage !== 'undefined') {
-                            storage.set('groups', groups);
-                        }
+                        window.localStorage.setItem('groups', JSON.stringify(groups));
                     }
 
                     resolve({ err: null,
@@ -1316,14 +1306,10 @@ var servConn = {
 
         // If cache used
         if (this._useStorage && useCache) {
-            if (typeof storage !== 'undefined') {
-                var enums = this._enums || storage.get('enums');
+            const enums = this._enums || window.getStoredObjects('enums');
                 if (enums) {
                     return callback(null, enums);
                 }
-            } else if (this._enums) {
-                return callback(null, this._enums);
-            }
         }
 
         if (this._type === 'local') {
@@ -1342,8 +1328,8 @@ var servConn = {
                     var obj = res.rows[i].value;
                     enums[obj._id] = obj;
                 }
-                if (that._useStorage && typeof storage !== 'undefined') {
-                    storage.set('enums', enums);
+                if (that._useStorage) {
+                    window.localStorage.setItem('enums', JSON.stringify(enums));
                 }
                 callback(null, enums);
             });
@@ -1363,8 +1349,8 @@ var servConn = {
     },
     // return time when the objects were synchronized
     getSyncTime:      function () {
-        if (this._useStorage && typeof storage !== 'undefined') {
-            var timeSync = storage.get('timeSync');
+        if (this._useStorage) {
+            const timeSync = window.localStorage.getItem('timeSync');
             if (timeSync) {
                 return new Date(timeSync);
             }
@@ -1488,19 +1474,11 @@ var servConn = {
     getConfigAsync:  async function (useCache) {
         
         if (this._useStorage && useCache) {
-            if (typeof storage !== 'undefined') {
-                var objects = storage.get('objects');
+                var objects = window.getStoredObjects();
                 if (objects && objects['system.config']) {
                     return {err: null,
                             config: objects['system.config'].common
                            }
-                }
-            } else if (this._objects && this._objects['system.config']) {
-                     return {err: null,
-                             config: this._objects['system.config'].common
-                            }
-                
-            }
         }
 
         var that = this;
@@ -1508,10 +1486,10 @@ var servConn = {
             this._socket.emit('getObject', 'system.config', function (err, obj) {
 
                 if (obj && obj.common) {
-                    if (that._useStorage && typeof storage !== 'undefined') {
-                        var objects = storage.get('objects') || {};
-                        objects['system.config'] = obj;
-                        storage.set('objects', objects);
+                    if (that._useStorage) {
+                         let objects = window.getStoredObjects() || {};
+                         objects['system.config'] = obj;
+                         window.localStorage.setItem('objects', JSON.stringify(objects));
                     }
 
                     resolve({err:null,
@@ -1569,9 +1547,7 @@ var servConn = {
         });
     },
     clearCache:       function () {
-        if (typeof storage !== 'undefined') {
-            storage.empty();
-        }
+        window.localStorage.clear();
     },
     getHistory:       function (id, options, callback) {
         if (!this._checkConnection('getHistory', arguments)) {

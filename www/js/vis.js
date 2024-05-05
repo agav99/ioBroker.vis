@@ -2,7 +2,7 @@
  *  ioBroker.vis
  *  https://github.com/ioBroker/ioBroker.vis
  *
- *  Copyright (c) 2013-2022 bluefox https://github.com/GermanBluefox,
+ *  Copyright (c) 2013-2024 bluefox https://github.com/GermanBluefox,
  *  Copyright (c) 2013-2014 hobbyquaker https://github.com/hobbyquaker
  *  Creative Common Attribution-NonCommercial (CC BY-NC)
  *
@@ -26,7 +26,6 @@
 /* global systemLang:true */
 /* global _ */
 /* global can */
-/* global storage */
 /* global servConn */
 /* global systemDictionary */
 /* global $ */
@@ -39,6 +38,21 @@
 /* global moment */
 /* jshint -W097 */// jshint strict:false
 'use strict';
+
+if (!window.getStoredObjects) {
+    window.getStoredObjects = function (name) {
+        let objects = window.localStorage.getItem(name || 'objects');
+        if (objects) {
+            try {
+                return JSON.parse(objects);
+            } catch (e) {
+                return null;
+            }
+        } else {
+            return null;
+        }
+    }
+}
 
 if (typeof systemDictionary !== 'undefined') {
     $.extend(systemDictionary, {
@@ -98,18 +112,6 @@ if (typeof systemDictionary !== 'undefined') {
             "es": "No se encontraron páginas!",
             "pl": "Nie znaleziono stron!",
             "zh-cn": "找不到页面！"},
-        "No valid license found!": {
-            "en": "No valid vis license found! Please check vis settings.",
-            "de": "Keine gültige vis Lizenz gefunden! Bitte vis Einstellungen prüfen.",
-            "ru": "Действительная лицензия не найдена! Пожалуйста, проверьте настройки.",
-            "pt": "Nenhuma licença válida encontrada! Por favor, verifique vis instance.",
-            "nl": "Geen geldige licentie gevonden! Controleer de vis-aankondiging.",
-            "fr": "Aucune licence valide trouvée ! Veuillez vérifier vis instance.",
-            "it": "Nessuna licenza valida trovata! Si prega di controllare di persona.",
-            "es": "No se encontró ninguna licencia válida! Por favor, compruebe la instancia de visita.",
-            "pl": "Nie znaleziono ważnej licencji! Proszę sprawdzić vis instance.",
-            "zh-cn": "找不到有效的许可证！请检查vis实例。"
-        },
         'No Views found on Server': {
             'en': 'No Views found on Server',
             'de': 'Keine Views am Server gefunden.',
@@ -275,13 +277,12 @@ if (typeof systemLang !== 'undefined' && typeof cordova === 'undefined') {
 
 //used for subscribeOidAtRuntime. 
 // Oid value allows the format: "any.00.____"   or  "any.any.any.00.___"    So we need allow dot "." 
-
-var FORBIDDEN_CHARS = /[_\-/ :!#$%&()+=@^{}|~]+/g; // from https://github.com/ioBroker/ioBroker.j-controller/blob/master/packages/common/lib/common/tools.js
-//var FORBIDDEN_CHARS = /[^._\-/ :!#$%&()+=@^{}|~]+/g; // from https://github.com/ioBroker/ioBroker.js-controller/blob/master/packages/common/lib/common/tools.js
-// var FORBIDDEN_CHARS = /[^._\-/ :!#$%&()+=@^{}|~\p{Ll}\p{Lu}\p{Nd}]+/gu; // it must be like this, but old browsers does not support Unicode
+  var FORBIDDEN_CHARS = /[_\-/ :!#$%&()+=@^{}|~]+/g;      // from https://github.com/ioBroker/ioBroker.j-controller/blob/master/packages/common/lib/common/tools.js
+//var FORBIDDEN_CHARS = /[^._\-/ :!#$%&()+=@^{}|~]+/g;    // from https://github.com/ioBroker/ioBroker.js-controller/blob/master/packages/common/lib/common/tools.js
+//var FORBIDDEN_CHARS = /[^._\-/ :!#$%&()+=@^{}|~\p{Ll}\p{Lu}\p{Nd}]+/gu; // it must be like this, but old browsers does not support Unicode
 
 var vis = {
-    version: '1.4.15',
+    version: '1.5.6',
     requiredServerVersion: '0.0.0',
 
     storageKeyViews:    'visViews',
@@ -351,6 +352,27 @@ var vis = {
     loginRequired:      false,
     sound:              /^((?!chrome|android).)*safari/i.test(window.navigator.userAgent) ? $('<audio id="external_sound" autoplay muted></audio>').appendTo('body') : null,
     
+    // Inform other widgets, that does not support canJS
+    //state это объект idState или state - разнцу смотрим в комментарии _setValue()
+    _updateWidgetsNotCanJS: function(id, state){
+        let idState;
+        if (this.onChangeCallbacks.length > 0 && state[id+'.val'] == undefined){
+            //преобразуем тип state в idState    
+            idState=this._stateToIdState(id, state);
+        }     
+        else {
+            idState=state;
+        }
+
+        for (let i = 0, len = this.onChangeCallbacks.length; i < len; i++) {
+            try {
+                this.onChangeCallbacks[i].callback(this.onChangeCallbacks[i].arg, id, idState);
+            }
+            catch (e) {
+                this.conn.logError(`Error: can't update states object for ${id}(${e}): ${JSON.stringify(e.stack)}`);
+            }
+        }
+    },
     //******************************************************************************* */
     //Вызов из setValue()
     // id - tagid
@@ -370,10 +392,11 @@ var vis = {
           потому что именно так добавдяется в this.states.attr(xxx), что было сделано ранее в setValue()
         */
         var that = this;
-        var oldValue = this.states.attr(id + '.val');
+        var oldValue = this.states.attr(`${id}.val`);
 
         // If ID starts from 'local_', do not send changes to the server, we assume that it is a local variable of the client
-        if (id.indexOf('local_') === 0) {
+        if (id.startsWith('local_')) {
+            that.states.attr(state);
             
             this.states.attr(idState);
 
@@ -392,13 +415,13 @@ var vis = {
         //console.log(`_setValue__NotLocal. tag:${id}  value:${idState[id + '.val']}`);
 
         //отправляем команду на сервер
-        this.conn.setState(id, idState[id + '.val'], function (err) {
+        this.conn.setState(id, idState[`${id}.val`], function (err) {
             if (err) {
                 //idState[id + '.val'] = oldValue;
                 that.showMessage(_('Cannot execute %s for %s, because of insufficient permissions', 'setState', id), _('Insufficient permissions'), 'alert', 600);
             }
             //к этому моменту updateState() уже должен быть выполнен и states[] уже содержит новое значение   
-            var val = that.states.attr(id + '.val');
+            const val = that.states.attr(`${id}.val`);
             //console.log(`_setValue_After. tag:${id}  value:${val}`);
 
             if (that.states.attr(id) || val !== undefined || val !== null) {
@@ -411,14 +434,14 @@ var vis = {
                 if (err) {
                     //возаращаем значение назад если получили ошибку сервера
                     if (isJustCreated) {
-                        that.states.removeAttr(id + '.val');
-                        that.states.removeAttr(id + '.q');
-                        that.states.removeAttr(id + '.from');
-                        that.states.removeAttr(id + '.ts');
-                        that.states.removeAttr(id + '.lc');
-                        that.states.removeAttr(id + '.ack');
+                        that.states.removeAttr(`${id}.val`);
+                        that.states.removeAttr(`${id}.q`);
+                        that.states.removeAttr(`${id}.from`);
+                        that.states.removeAttr(`${id}.ts`);
+                        that.states.removeAttr(`${id}.lc`);
+                        that.states.removeAttr(`${id}.ack`);
                     } else {
-                        idState[id + '.val'] = oldValue;
+                        idState[`${id}.val`] = oldValue;
                         that.states.attr(idState);
                     }
                 }
@@ -440,25 +463,25 @@ var vis = {
         var d = new Date();
         var t = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2) + " " + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2);
         
-        if (this.states.attr(id + '.val') == val &&
-            this.states.attr(id + '.ts') == t){
+        if (this.states.attr(`${id}.val`) == val &&
+            this.states.attr(`${id}.ts`) == t){
                 //Иногда замечено два вызова сразу  - отсекаем
                 return;
         }
 
         var o = {};
         var created = false;
-        if (this.states.attr(id + '.val') != val) {
+        if (this.states.attr(`${id}.val`) != val) {
             //Если значени изменилось
-            o[id + '.lc'] = t;
+            o[`${id}.lc`] = t;
         } else {
-            o[id + '.lc'] = this.states.attr(id + '.lc');
+            o[`${id}.lc`] = this.states.attr(`${id}.lc`);
         }
-        o[id + '.val'] = val;
-        o[id + '.ts'] = t;
-        o[id + '.ack'] = false;
+        o[`${id}.val`] = val;
+        o[`${id}.ts`] = t;
+        o[`${id}.ack`] = false;
 
-        var _val = this.states.attr(id + '.val');
+        var _val = this.states.attr(`${id}.val`);
         // Create this value
         if (_val === undefined || _val === null) {
             created = true;
@@ -493,7 +516,7 @@ var vis = {
     },
 
     loadWidgetSet:      function (name, callback) {
-        var url = './widgets/' + name + '.html?visVersion=' + this.version;
+        var url = `./widgets/${name}.html?visVersion=${this.version}`;
         var that = this;
         $.ajax({
             url: url,
@@ -505,7 +528,7 @@ var vis = {
                     try {
                         $('head').append(data);
                     } catch (e) {
-                        console.error('Cannot load widget set "' + name + '": ' + e);
+                        console.error(`Cannot load widget set "${name}": ${e}`);
                     }
                     that.toLoadSetsCount -= 1;
                     if (that.toLoadSetsCount <= 0) {
@@ -519,7 +542,7 @@ var vis = {
                 }, 0);
             },
             error: function (jqXHR, textStatus, errorThrown) {
-                that.conn.logError('Cannot load widget set ' + name + ' ' + errorThrown);
+                that.conn.logError(`Cannot load widget set ${name} ${errorThrown}`);
             }
         });
     },
@@ -603,9 +626,8 @@ var vis = {
         if (this.binds && this.binds.stateful !== undefined && this.binds.stateful !== null) {
             this.toLoadSetsCount = 0;
         } else {
-            this.showWaitScreen(true, '<br>' + _('Loading Widget-Sets...') + ' <span id="widgetset_counter"></span>', null, 20);
-
-            // Get list of used widget sets. if Edit mode list is null.
+            this.showWaitScreen(true, `<br>${_('Loading Widget-Sets...')} <span id="widgetset_counter"></span>`, null, 20);
+            // Get a list of used widget sets. If Edit mode list is null.
             var widgetSets = this.editMode ? null : this.getUsedWidgetSets();
 
             // First calculate how many sets to load
@@ -648,9 +670,12 @@ var vis = {
         if (typeof app !== 'undefined' && app.settings) {
             this.instance = app.settings.instance;
         }
-        if (typeof storage !== 'undefined') {
-            this.instance = this.instance || storage.get(this.storageKeyInstance);
+
+        this.instance = this.instance || window.localStorage.getItem(this.storageKeyInstance);
+        if (typeof this.instance !== 'string') {
+            this.instance = '';
         }
+
         if (this.editMode) {
             this.bindInstanceEdit();
         }
@@ -662,12 +687,10 @@ var vis = {
             return;
         }
 
-        if (typeof storage !== 'undefined') {
-            var settings = storage.get(this.storageKeySettings);
+        let settings = window.getStoredObjects(this.storageKeySettings);
             if (settings) {
                 this.settings = $.extend(this.settings, settings);
             }
-        }
 
         // Late initialization (used only for debug)
         /*if (this.binds.hqWidgetsExt) {
@@ -821,8 +844,6 @@ var vis = {
                     }
                 )
             }
-
-            this.checkLicense();
         }
 
         if (!containers.length && this.activeView) {
@@ -2935,27 +2956,6 @@ parentContainerWidgetId: parentContainerWidgetId, //
             }
         }
     },
-    // Inform other widgets, that does not support canJS
-    //state это объект idState или state - разнцу смотрим в комментарии _setValue()
-    _updateWidgetsNotCanJS: function(id, state){
-        let idState;
-        if (this.onChangeCallbacks.length > 0 && state[id+'.val'] == undefined){
-            //преобразуем тип state в idState    
-            idState=this._stateToIdState(id, state);
-        }     
-        else {
-            idState=state;
-        }
-
-        for (var i = 0, len = this.onChangeCallbacks.length; i < len; i++) {
-            try {
-                this.onChangeCallbacks[i].callback(this.onChangeCallbacks[i].arg, id, idState);
-            }
-            catch (e) {
-                this.conn.logError('Error: can\'t update states object for ' + id + '(' + e + '): ' + JSON.stringify(e.stack));
-            }
-        }
-    },
     /**********************************************************************/
     isWidgetHidden:     function (view, widget, val, widgetData) {
        
@@ -3530,12 +3530,18 @@ parentContainerWidgetId: parentContainerWidgetId, //
                             value = Math.ceil(parseFloat(value));
                             break;
                         case 'json':
-                            if((value) && (typeof value === 'string'))          
+                            if (value && typeof value === 'string') {
+                                try {
                             value = JSON.parse(value);
-                            if (typeof value === 'object') 
-                                value = getObjPropValue(value, oids[t].operations[k].arg)
+                                } catch (e) {
+                                    console.warn(`Cannot parse JSON string: ${value}`);
+                                }
+                            }
+                            if (value && typeof value === 'object') {
+                                value = getObjPropValue(value, oids[t].operations[k].arg);
+                            }
                             break;   
-                    } //switch1
+                    } //switch
                 }
             } //if for
             format = format.replace(oids[t].token, value);
@@ -3826,22 +3832,6 @@ parentContainerWidgetId: parentContainerWidgetId, //
         }
     },
     //******************************************************************************************* */
-    checkLicense: function () {
-        if (!this.licTimeout && (typeof visConfig === 'undefined' || visConfig.license === false)) {
-            this.licTimeout = setTimeout(function () {
-                this.licTimeout = setTimeout(function () {
-                    $('#vis_container').hide();
-                    $('#vis_license').css('background', '#000');
-                }.bind(this), 10000);
-
-                var $lic = $('#vis_license');
-                var $text = $lic.find('.vis-license-text');
-                $text.text(_($text.text()));
-                $lic.show();
-            }.bind(this), 10000);
-        }
-    },
-    //******************************************************************************************* */
     findAndDestroyViews: function () {
         if (this.destroyTimeout) {
             clearTimeout(this.destroyTimeout);
@@ -3865,7 +3855,7 @@ parentContainerWidgetId: parentContainerWidgetId, //
            if (that.views.hasOwnProperty(view) &&
                (that.views[view].settings.alwaysRender || view === that.activeView)) { //not enough for ViewClones
             
-                if (usedContainers.indexOf(viewURI) === -1) {
+                if (!usedContainers.includes(viewURI)) {
                     usedContainers.push(viewURI);
                 }
                 
@@ -3874,7 +3864,7 @@ parentContainerWidgetId: parentContainerWidgetId, //
                 $subContainers.each(function () {
                     let viewURI= $(this).attr('data-vis-contains') || $(this).attr('data-view'); 
 
-                    if (usedContainers.indexOf(viewURI) === -1) {
+                    if (!usedContainers.includes(viewURI)) {
                         usedContainers.push(viewURI);
                     }
                 });
@@ -3889,7 +3879,7 @@ parentContainerWidgetId: parentContainerWidgetId, //
                 $containers.each(function () {
                     let viewURI= $(this).attr('data-vis-contains') || $(this).attr('data-view'); 
 
-                    if (usedContainers.indexOf(viewURI) === -1) {
+                    if (!usedContainers.includes(viewURI)) {
                         usedContainers.push(viewURI);
                     }
                 });
@@ -3905,7 +3895,7 @@ parentContainerWidgetId: parentContainerWidgetId, //
             let viewURI=$this.attr('data-vis-contains')||$this.attr('data-view'); 
             let viewDiv=$this.attr('id').substring('visview_'.length);;
            
-            if (usedContainers.indexOf(viewURI) !== -1 || $this.hasClass('vis-edit-group') || $this.data('persistent')) {
+            if (usedContainers.includes(viewURI) || $this.hasClass('vis-edit-group') || $this.data('persistent')) {
                 return;
             }
             unUsedContainers.push({viewDiv:viewDiv,
@@ -3949,13 +3939,11 @@ parentContainerWidgetId: parentContainerWidgetId, //
 
     //**************************************************************************** */    
     generateInstance:   function () {
-        if (typeof storage !== 'undefined') {
             this.instance = (Math.random() * 4294967296).toString(16);
-            this.instance = '0000000' + this.instance;
+            this.instance = `0000000${this.instance}`;
             this.instance = this.instance.substring(this.instance.length - 8);
             $('#vis_instance').val(this.instance);
-            storage.set(this.storageKeyInstance, this.instance);
-        }
+            window.localStorage.setItem(this.storageKeyInstance, this.instance);
     },
 
     //**********************************************************************************/
@@ -4125,25 +4113,25 @@ parentContainerWidgetId: parentContainerWidgetId, //
         //console.log(`updateState. tag:${id}  value:${state.val}`);
 
         //Update state
-        if (id.indexOf('local_') === 0) {
+        if (id.startsWith('local_')) {
             //вызов только из _setValue()
             //this.states.attr(state);  не требуется  тк был выполнен ранее в _setValue()
         }else {
             if (this.editMode) {
-                this.states[id + '.val'] = state.val;
-                this.states[id + '.ts']  = state.ts;
-                this.states[id + '.ack'] = state.ack;
-                this.states[id + '.lc']  = state.lc;
+                this.states[`${id}.val`] = state.val;
+                this.states[`${id}.ts`]  = state.ts;
+                this.states[`${id}.ack`] = state.ack;
+                this.states[`${id}.lc`]  = state.lc;
                 if (state.q !== undefined && state.q !== null) {
-                    this.states[id + '.q'] = state.q;
+                    this.states[`${id}.q`] = state.q;
                 }
             } 
             else {
-                var o = this._stateToIdState(id,state);
+                const o = this._stateToIdState(id,state);
                 try {
                     this.states.attr(o);
                 } catch (e) {
-                    this.conn.logError('Error: can\'t create states object for ' + id + '(' + e + '): ' + JSON.stringify(e.stack));
+                    this.conn.logError(`Error: can't create states object for ${id}(${e}): ${JSON.stringify(e.stack)}`);
                 }
             }
         }
@@ -4163,16 +4151,18 @@ parentContainerWidgetId: parentContainerWidgetId, //
                     $(mmWidget).hide();
                     if (mmWidget &&
                         mmWidget._customHandlers &&
-                        mmWidget._customHandlers.onHide) {
+                        mmWidget._customHandlers.onHide
+                       ){
                         mmWidget._customHandlers.onHide(mmWidget, id);
-                    }
+                      }
                 } else {
                     $(mmWidget).show();
                     if (mmWidget &&
                         mmWidget._customHandlers &&
-                        mmWidget._customHandlers.onShow) {
-                        mmWidget._customHandlers.onShow(mmWidget, id);
-                    }
+                        mmWidget._customHandlers.onShow
+                        ) {
+                          mmWidget._customHandlers.onShow(mmWidget, id);
+                       }
                 }
             }
 
@@ -4349,7 +4339,7 @@ parentContainerWidgetId: parentContainerWidgetId, //
         // if state value is an oid, and it is not subscribe then subscribe it at runtime, can happen if binding are used in oid attributes
         // the id with invalid contains characters not allowed in oid's
         FORBIDDEN_CHARS.lastIndex=0;
-        if (!FORBIDDEN_CHARS.test(oid) && (this.subscribing.active.indexOf(oid) === -1 || force) && oid.length < 300) {
+        if (!FORBIDDEN_CHARS.test(oid) && (!this.subscribing.active.includes(oid) || force) && oid.length < 300) {
          
             // Oid value allows the format: "any.00.____"   or  "any.any.any.00.___" 
             if ((/^[^.]*\.\d*\..*|^[^.]*\.[^.]*\.[^.]*\.\d*\..*/).test(oid)) {
@@ -4357,7 +4347,7 @@ parentContainerWidgetId: parentContainerWidgetId, //
 
                 var that = this;
                 this.conn._socket.emit('getStates', oid, function (error, data) {
-                    console.log('Create inner vis object ' + oid + 'at runtime');
+                    console.log(`Create inner vis object ${oid}at runtime`);
                     that.updateStates(data);
                     that.conn.subscribe(oid);
 
@@ -4385,13 +4375,13 @@ parentContainerWidgetId: parentContainerWidgetId, //
                         });
 
                         if (widgetIndex >= 0) {
-                            // widget exists in visibility list
+                            // widget exists in a visibility list
                             if (id !== oid) {
                                 this.visibility[id].splice(widgetIndex, 1);
                                 // console.log('widget ' + obj.widget + ' removed from ' + id);
                             }
                         } else {
-                            // widget not exists in visibility list
+                            // widget doesn't exist in a visibility list
                             if (id === oid) {
                                 this.visibility[id].push(obj);
                                 // console.log('widget ' + obj.widget + ' added to ' + id);
@@ -4500,7 +4490,7 @@ if ('applicationCache' in window) {
                 try {
                     window.applicationCache.swapCache();
                 } catch (_e) {
-                    servConn.logError('Cannot execute window.applicationCache.swapCache - ' + _e);
+                    servConn.logError(`Cannot execute window.applicationCache.swapCache - ${_e}`);
                 }
                 setTimeout(function () {
                     window.location.reload();
@@ -4616,9 +4606,37 @@ function main($, onReadyCallBack) {
             }
             //console.log('ERROR: binding in edit mode is not allowed on ' + id);
         };
+
+        // Dynamic webmanifest
+        const webmanifest = {
+            name: 'ioBroker vis',
+            short_name: 'vis',
+            start_url: `.#${vis.projectPrefix}`,
+            display: 'standalone',
+            background_color : '#ffffff',
+            description: 'WEB visualisation for ioBroker platform',
+            icons: [{
+                src: 'img/vis.png',
+                sizes: '192x192',
+                type: 'image/png'
+            }],
+        };
+        const manifestString = JSON.stringify(webmanifest);
+
+        const webManifest = document.querySelector('#webmanifest');
+        if (webManifest) {
+            const manifestBlob = new Blob([manifestString], {type: 'application/json'});
+            const manifestURL = URL.createObjectURL(manifestBlob);
+            webManifest.setAttribute('href', manifestURL);
+        }
+
+        const manifestLink = document.createElement('link');
+        manifestLink.rel = 'manifest';
+        manifestLink.setAttribute('href', `data:application/json;charset=8${manifestString}`);
+        document.head.appendChild(manifestLink);
     }
 
-    // für iOS Safari - wirklich notwendig?
+    // für iOS Safari - really required?
     $('body').on('touchmove', function (e) {
         !$(e.target).closest('body').length && e.preventDefault();
     });
@@ -4636,7 +4654,7 @@ function main($, onReadyCallBack) {
 
     $('.vis-version').html(vis.version);
 
-    vis.showWaitScreen(true, null, _('Connecting to Server...') + '<br/>', 0);
+    vis.showWaitScreen(true, null, `${_('Connecting to Server...')}<br/>`, 0);
 
     function compareVersion(instVersion, availVersion) {
         var instVersionArr = instVersion.replace(/beta/, '.').split('.');

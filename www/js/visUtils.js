@@ -124,16 +124,19 @@ function getWidgetGroup(views, view, widget) {
 /***************************************************************/
 // get valuе of Obj property PropPath. PropPath is string like "Prop1" or "Prop1.Prop2" ...
 //Used for calculation "json" binding instruction
-function getObjPropValue(obj, PropPath){
-    if (!obj) return undefined;
-
-    let parts=PropPath.split('.');
-    for (let part of parts){
-     obj=obj[part];
-     if (!obj) return undefined;
+function getObjPropValue(obj, propPath) {
+    if (!obj) {
+        return undefined;
+    }
+    const parts = propPath.split('.');
+    for (const part of parts) {
+        obj = obj[part];
+        if (!obj) {
+            return undefined;
+        }
     }
     return obj;
- }
+}
 
 
 
@@ -165,10 +168,13 @@ function extractBinding(format) {
         for (var p = 0; p < oid.length && p < 50; p++) {
             //Parsing one binding instruction {__;__;__;__;__}
             var _oid = oid[p].substring(1, oid[p].length - 1);
-            if (_oid[0] === '{') continue;
+            if (_oid[0] === '{') {
+                continue;
+            }
             // If first symbol '"' => it is JSON
-            if (_oid && _oid[0] === '"') continue;
-
+            if (_oid && _oid[0] === '"') {
+                continue;
+            }
             var parts = _oid.split(';');
             result = result || [];
             var systemOid = parts[0].trim();
@@ -216,7 +222,10 @@ function extractBinding(format) {
             for (var u = 1; u < parts.length; u++) {
                 // eval construction
                 if (isEval) {
-                    if (parts[u].trim().match(/^[\d\w_]+:\s?[-.\d\w_]+$/)) {//parts[u].indexOf(':') !== -1 && parts[u].indexOf('::') === -1) {
+                    //if (parts[u].trim().match(/^[\d\w_]+:\s?[-.\d\w_]+$/)) {  //v1.4.15
+                    //if (parts[u].trim().match(/^[\d\w_]+:\s?[-.\d\w_]+$/))  {  //v my 
+                    if (parts[u].trim().match(/^[\d\w_]+:\s?[-._/ :!#$%&()+=@^{}|~\p{Ll}\p{Lu}\p {Nd}]+$/u)) { //v1.5.6 
+
                         var _systemOid = parts[u].trim();
                         var _visOid = _systemOid;
 
@@ -380,14 +389,14 @@ function extractBinding(format) {
                                 }
                             }
                         } else
-                        if (parse[1] === 'json'){       //json(objPropPath)  ex: json(prop1);  json(prop1.propA)
+                        if (parse[1] === 'json'){       
+                            //json(objPropPath)  ex: json(prop1);  json(prop1.propA)
                             operations = operations || [];
                             parse[2] = (parse[2] || '').trim();
                             parse[2] = parse[2].substring(1, parse[2].length - 1);
                             operations.push({op: parse[1], arg: parse[2]});
-                        }else
-                        // operators without parameter
-                        {
+                        }else{
+                            // operators without parameter
                             operations = operations || [];
                             operations.push({op: parse[1]});
                         }

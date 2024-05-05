@@ -2,7 +2,7 @@
  *  ioBroker.vis
  *  https://github.com/ioBroker/ioBroker.vis
  *
- *  Copyright (c) 2013-2022 bluefox https://github.com/GermanBluefox,
+ *  Copyright (c) 2013-2024 bluefox https://github.com/GermanBluefox,
  *  Copyright (c) 2013-2014 hobbyquaker https://github.com/hobbyquaker
  *  Creative Common Attribution-NonCommercial (CC BY-NC)
  *
@@ -333,8 +333,12 @@ vis = $.extend(true, vis, {
             }
         });
 
-        if (this.config['size/pan_add_wid']) $panAddWidget.width(this.config['size/pan_add_wid']);
-        if (this.config['size/pan_attr'])    $panAttr.width(this.config['size/pan_attr']);
+        if (this.config['size/pan_add_wid']) {
+            $panAddWidget.width(this.config['size/pan_add_wid']);
+        }
+        if (this.config['size/pan_attr']) {
+            $panAttr.width(this.config['size/pan_attr']);
+        }
 
         $(window).resize(layout);
 
@@ -350,9 +354,6 @@ vis = $.extend(true, vis, {
         layout();
 
         $('#vis-version').html(this.version);
-        if (typeof visConfig !== 'undefined' && visConfig.license === false) {
-            $('#vis-version').addClass('vis-license-error').attr('title', _('License error! Please check logs for details.'));
-        }
 
         $('#button_undo').button({
                 icons: {primary: 'ui-icon ui-icon-arrowreturnthick-1-w'},
@@ -843,7 +844,9 @@ vis = $.extend(true, vis, {
                 });
             }
         }*/
-        if (this.config.groupsState) this.groupsState = this.config.groupsState;
+        if (this.config.groupsState) {
+            this.groupsState = this.config.groupsState;
+        }
     },
     editSetGrid:            function (viewDiv, view) {
         var grid = parseInt(this.views[view].settings.gridSize, 10);
@@ -3137,10 +3140,8 @@ vis = $.extend(true, vis, {
                 });
             }).show();
             $('#clear_local_view').click(function () {
-                if (typeof storage !== 'undefined') {
-                    localStorage.clear();
+                window.localStorage.clear();
                     window.location.reload();
-                }
             }).show();
             $('#local_view').show();
         }
@@ -3157,22 +3158,29 @@ vis = $.extend(true, vis, {
         // Selected view, selected menu page,
         // Selected widget or view page
         // Selected filter
-        if (typeof storage !== 'undefined') {
             try {
-                var stored = storage.get('visConfig');
-                this.config = stored ? JSON.parse(stored) : {};
+            this.config = window.getStoredObjects('visConfig') || {};
+            if (typeof this.config === 'string') {
+                try {
+                    this.config = JSON.parse(this.config);
             } catch (e) {
-                console.log('Cannot load edit config');
                 this.config = {};
             }
         }
+            if (typeof this.config !== 'object') {
+                this.config = {};
+            }
+        } catch (e) {
+            console.log('Cannot load edit config');
+            this.config = {};
+        }
     },
     editSaveConfig:         function (attr, value) {
-        if (attr) this.config[attr] = value;
-
-        if (typeof storage !== 'undefined') {
-            storage.set('visConfig', JSON.stringify(this.config));
+        if (attr) {
+            this.config[attr] = value;
         }
+
+        window.localStorage.setItem('visConfig', JSON.stringify(this.config));
     },
     /**
      * Change order of widgets in th e view.
@@ -6151,7 +6159,7 @@ vis = $.extend(true, vis, {
 
         $('#vis_instance').change(function () {
             that.instance = $(this).val();
-            if (typeof storage !== 'undefined') storage.set(that.storageKeyInstance, that.instance);
+            window.localStorage.set(that.storageKeyInstance, that.instance);
         }).val(this.instance);
     },
     lockWidgets:            function (viewDiv, view, widgets) {
