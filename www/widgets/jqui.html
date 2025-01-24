@@ -1658,9 +1658,15 @@
         data-vis-type="ctrl"
         data-vis-prev='<div id="prev_tplJquiBool" style="position: relative; text-align: initial;padding: 4px "><div class="ui-widget ui-corner-all ui-state-default vis-widget_prev " style="width: 79px; height: 25px;"> <div class="vis-widget-prev-body" style="text-align: center;padding-top: 5px;"> true/false</div> </div></div>'
         data-vis-name="Html Bool"
-        data-vis-attrs="oid;html_true;html_false">
+        data-vis-attrs="oid;html_true;html_false;vibro/checkbox">
 
-    <div class="ui-widget ui-corner-all ui-state-default vis-widget <%== this.data.attr('class') %>" style="width:76px; height:76px" id="<%= this.data.attr('wid') %>"  data-no-style="<%= this.data.attr('no_style') %>"  data-oid="<%= this.data.attr('oid') %>" <%= (el) -> vis.binds.basic.toggle(el); vis.binds.jqueryui.classes(el) %>>
+    <div class="ui-widget ui-corner-all ui-state-default vis-widget <%== this.data.attr('class') %>"
+       style="width:76px; height:76px" 
+       id="<%= this.data.attr('wid') %>"  
+       data-no-style="<%= this.data.attr('no_style') %>"  
+       data-oid="<%= this.data.attr('oid') %>" 
+       data-vibro="<%= this.data.attr('vibro') %>" 
+        <%= (el) -> vis.binds.basic.toggle(el); vis.binds.jqueryui.classes(el) %>>
         <div class="vis-widget-body">
             <div>
                 <% if (vis.binds.basic.isFalse(vis.states.attr(this.data.oid + '.val'))) { %>

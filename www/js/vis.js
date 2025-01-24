@@ -452,7 +452,7 @@ var vis = {
         });
     },
     //******************************************************************************* */
-    setValue:    function (id, val) {
+    setValue:    function (id, val, vibro) {
         if (!id) {
             console.log('ID is null for val=' + val);
             return;
@@ -497,6 +497,10 @@ var vis = {
         if (!this.statesDebounce[id]) { 
             // send control command
             this._setValue(id, o, created);
+            if (vibro){
+                 navigator.vibrate(100);
+             }
+
             // Start timeout
             this.statesDebounce[id] = {
                 timeout: _setTimeout(function () {
@@ -515,6 +519,7 @@ var vis = {
         }
     },
 
+     /****************************************************************/
     loadWidgetSet:      function (name, callback) {
         var url = `./widgets/${name}.html?visVersion=${this.version}`;
         var that = this;
@@ -546,6 +551,8 @@ var vis = {
             }
         });
     },
+
+    /****************************************************************/
     // Return as array used widgetSets or null if no information about it
     getUsedWidgetSets:  function () {
         var widgetSets = [];
@@ -896,6 +903,35 @@ var vis = {
         }
 
         $view.css({width: width, height: height});
+    },
+    /**********************************************************************/
+    autoResizeContainers: function (){
+        
+        console.debug(`-------------  autoResizeContainers--------------------`);
+        $('#vis_container').find('.vis-view-container').each(function () {
+            let container=$(this).parent();
+            let autozoom= container.data('autozoom');
+            let view =$(this).children().first();// ( ".vis-view" );
+            //view.html()
+            //view.attr('id')
+            //console.debug(`--02---  subViewId=${view.attr('id')}`);
+            //console.debug(`--02---  subViewId=${view.data('view')}`);
+            let viewModelId=view.data('view');
+
+            let dbglog = `----- Container: w=${container.width()}  h=${container.height()} needZoom:${autozoom}  SubPage:${viewModelId} SubPageId:${view.attr('id')}`;
+            let viewModel = vis.views[viewModelId];
+            if (viewModel && viewModel.settings.sizex && viewModel.settings.sizey)
+            {
+                let z = Math.min(container.width()/viewModel.settings.sizex, container.height()/viewModel.settings.sizey); 
+                dbglog =   dbglog +` setZoom=${z}`
+                
+                $(this).css({'transform-origin':         'top left',
+                             '-webkit-transform-origin': 'top left',
+                             transform : 'scale('+ z +')'
+                            });
+            }
+            console.debug(dbglog);  
+        });
     },
 
     /**********************************************************************/
@@ -2627,7 +2663,7 @@ parentContainerWidgetId: parentContainerWidgetId, //
         }
 
         //Обновляем this.activeView, this.activeViewDiv  
-        await that.postChangeView(res.viewDiv, res.view);
+        await that.postChangeView(res.viewDiv, res.view); //??? нужно ли так в git
         
         if(effect){
             // If hide and show at the same time
@@ -2664,10 +2700,12 @@ parentContainerWidgetId: parentContainerWidgetId, //
             }
 
             $view.show();
+
+   	    //await that.postChangeView(res.viewDiv, res.view);//??? так было на RB4
             //$view.find('.vis-view-disabled').hide(); зачем
             that.destroyUnusedViews();
         }   
-        
+        vis.autoResizeContainers(); 
         
         // remember last click for de-bounce
         this.lastChange = Date.now();
@@ -5106,6 +5144,7 @@ function main($, onReadyCallBack) {
         }, false);
         window.addEventListener('resize', function () {
             vis.orientationChange();
+            vis.autoResizeContainers();
         }, false);
     }
 

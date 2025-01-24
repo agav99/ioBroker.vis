@@ -1031,6 +1031,7 @@
             var oidTrueVal  = $this.data('oid-true-value');
             var oidFalseVal = $this.data('oid-false-value');
             var readOnly    = $this.data('read-only');
+            var vibro       = $this.data('vibro');
 
             if (min === '') min = undefined;
             if (max === '') max = undefined;
@@ -1076,14 +1077,14 @@
                                 if (oidTrueVal === 'true')  oidTrueVal = true;
                                 var f = parseFloat(oidTrueVal);
                                 if (f.toString() == oidTrueVal) oidTrueVal = f;
-                                vis.setValue(oidTrue,  oidTrueVal);
+                                vis.setValue(oidTrue,  oidTrueVal, vibro);
                             } else {
                                 if (oidFalseVal === undefined || oidFalseVal === null) oidFalseVal = min;
                                 if (oidFalseVal === 'false') oidFalseVal = false;
                                 if (oidFalseVal === 'true')  oidFalseVal = true;
                                 var f = parseFloat(oidFalseVal);
                                 if (f.toString() == oidFalseVal) oidFalseVal = f;
-                                vis.setValue(oidFalse, oidFalseVal);
+                                vis.setValue(oidFalse, oidFalseVal, vibro);
                             }
                         }
 
@@ -1111,12 +1112,12 @@
                         var val = vis.states[oid + '.val'];
                         if ((min === undefined && (val === null || val === '' || val === undefined || val === false || val === 'false')) ||
                             (min !== undefined && min == val)) {
-                            vis.setValue(oid, max !== undefined ? max : true);
+                            vis.setValue(oid, max !== undefined ? max : true, vibro);
                         } else
                         if ((max === undefined && (val === true || val === 'true')) ||
                             (max !== undefined && val == max))
                         {
-                            vis.setValue(oid, min !== undefined ? min : false);
+                            vis.setValue(oid, min !== undefined ? min : false, vibro);
                         } else {
                             val = parseFloat(val);
                             if (min !== undefined && max !== undefined) {
@@ -1132,7 +1133,7 @@
                                     val = 1;
                                 }
                             }
-                            vis.setValue(oid, val);
+                            vis.setValue(oid, val, vibro);
                         }
                     }
                 }).on('touchmove', function () {
