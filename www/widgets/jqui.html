@@ -460,6 +460,18 @@
             } else {
                 $(el).parent().find('div.vis-widget-body').show();
             }
+
+            //удаление содержания диалога
+            $(el).parent().data('destroy', function (id, $widget) {
+                try {
+                   let dlg = $(`#${id}_dialog`);
+                   if (dlg.length){
+                       //console.warn(`****destroy widdd=${a.attr('id')}`);
+                       dlg.remove();
+                   }
+                } catch (e) {
+                }
+            });
         },
         dialogAutoClose: function (el, timeout) {
             if (timeout === true || timeout === 'true') timeout = 10000;
@@ -1469,11 +1481,16 @@
         data-vis-attrs="html/text;contains_view/views;setId/id;setValue;"
         data-vis-attrs0="count[1]/number,0,10;viewAttr(1-count)/id;"
         data-vis-attrs1="group.dialog;title;noHeader/checkbox;autoclose/slider,0,30000,100;modal/checkbox;dialog_width;dialog_height;dialog_top;dialog_left;overflowX/nselect,,visible,hidden,scroll,auto,initial,inherit;overflowY/nselect,,visible,hidden,scroll,auto,initial,inherit">
-    <div class="vis-widget <%== this.data.attr('class') %>" style="width: 200px; height: 130px; border: 1px solid #000; background: #fff; cursor: pointer" id="<%= this.data.attr('wid') %>">
+    <div class="vis-widget vis-containerdialog <%== this.data.attr('class') %>" 
+             style="width: 200px; height: 130px; border: 1px solid #000; background: #fff; cursor: pointer" 
+             id="<%= this.data.attr('wid') %>">
         <div id="<%= this.data.attr('wid') %>_body" class="vis-widget-body">
             <%== this.data.attr('html') %>
         </div>
-        <div id="<%= this.data.attr('wid') %>_dialog" style="display: none" class="vis-widget-dialog" title="<%= this.data.attr('title') %>">
+        <div id="<%= this.data.attr('wid') %>_dialog" 
+             style="display: none" 
+             class="vis-widget-dialog" 
+             title="<%= this.data.attr('title') %>">
             <div data-vis-contains="<%= vis.getViewURI(this.data) %>" class="vis-widget-body vis-view-container"></div>
         </div>
         <div class="popup-helper" <%= (el) -> vis.binds.jqueryui.dialogContainer(el, data) %> />

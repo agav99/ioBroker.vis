@@ -72,7 +72,21 @@ body, html {
 }
 
 .ui-dialog .ui-dialog-content {
-    padding: .5em 0;
+   padding: .1em 0 0 0;
+}
+
+.ui-dialog .ui-dialog-titlebar {
+    padding: 0em 0em 0 1em;
+    position: relative;
+    
+}
+
+.ui-widget {
+    font-size: 1em;
+}
+
+.ui-dialog {
+    padding: .1em;  
 }
 
 .vis-widget-button {

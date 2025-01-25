@@ -1492,22 +1492,30 @@ var vis = {
 
         var that = this;
         console.debug('    destroy widget: ' + widget + ' on '+viewDiv);
+       
+        //проверка на наличчие внутри контейнеров, если есть удаление их
+        sub_CheckContainers($widget);
 
-        var $subContainers = $widget.find('.vis-view');  
-        $subContainers.each(function () {
-            var $this = $(this);            //View or CloneView
-            let viewURI=$this.attr('data-vis-contains')||$this.attr('data-view'); 
-            let viewDiv=$this.attr('id').substring('visview_'.length);;
-                
-            that.destroyView(viewDiv, viewURI, viewOidsAgregator);
-            //let viewURI= $(this).attr('data-vis-contains') || $(this).attr('data-view'); 
-        });
-
+        //проверка явдяется ли элемент группой
         if ($widget.attr('id')[0]==='g'){ //widget is group
             $widget.find('> .vis-widget').each(function () {
                 that.destroyWidget(viewDiv, view, $(this).attr('id'), false, viewOidsAgregator);
                 });
         }
+
+        //проверка на принадлжность классу "vis-containerdialog", который относится к диалогам
+        if ($widget.hasClass("vis-containerdialog")) {
+            let dlg = $(`#${widget}_dialog`);
+            if (dlg.length){
+                sub_CheckContainers(dlg);
+            }
+        }
+
+        /*let widgetViewId=this.widgets[widget].modelViewId;
+        let widgetModelId=this.widgets[widget].wid;
+        if(this.views[widgetViewId].widgets[widgetModelId].tpl=="tplContainerDialog"){
+          //todo
+        }*/
 
         if (needUpdateCloneAnimateInfo || this.editMode){
             //if it's Clone Widget need to clear all clone animation colections
@@ -1545,6 +1553,20 @@ var vis = {
             }
         } catch (e) {
             console.error('Cannot destroy "' + widget + '": ' + e);
+        }
+
+        //Проверить есть ли в элементе pWidget контейнеры и уничтожить их
+        function sub_CheckContainers(pWidget){
+            var $subContainers = pWidget.find('.vis-view');  
+            $subContainers.each(function () {
+                var $this = $(this);            //View or CloneView
+                let viewURI=$this.attr('data-vis-contains')||$this.attr('data-view'); 
+                let viewDiv=$this.attr('id').substring('visview_'.length);;
+                    
+                that.destroyView(viewDiv, viewURI, viewOidsAgregator);
+                //let viewURI= $(this).attr('data-vis-contains') || $(this).attr('data-view'); 
+            });
+
         }
     },
     
