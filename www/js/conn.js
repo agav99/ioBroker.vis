@@ -1433,6 +1433,7 @@ var servConn = {
             return false;
         }
     },
+    //*************************************************************************/
     authenticate:     function (user, password, salt) {
         this._authRunning = true;
 
@@ -1452,6 +1453,7 @@ var servConn = {
             console.log("No credentials!");
         }
     },
+    //*************************************************************************/
     getConfig:        function (useCache, callback) {
         if (!this._checkConnection('getConfig', arguments)) {
             return; 
@@ -1471,6 +1473,7 @@ var servConn = {
          })    
     },
 
+    //*************************************************************************/
     getConfigAsync:  async function (useCache) {
         
         if (this._useStorage && useCache) {
@@ -1479,6 +1482,7 @@ var servConn = {
                     return {err: null,
                             config: objects['system.config'].common
                            }
+        }
         }
 
         var that = this;
@@ -1504,11 +1508,14 @@ var servConn = {
         });
     },
 
+    //*************************************************************************/
     sendCommand:      function (instance, command, data, ack) {
         this.setState(this.namespace + '.control.instance', {val: instance || 'notdefined', ack: true});
         this.setState(this.namespace + '.control.data',     {val: data,    ack: true});
         this.setState(this.namespace + '.control.command',  {val: command, ack: ack === undefined ? true : ack});
     },
+
+    //*************************************************************************/
     _detectViews:     function (projectDir, callback) {
         this.readDir('/' + this.namespace + '/' + projectDir, function (err, dirs) {
             // find vis-views.json
@@ -1520,6 +1527,8 @@ var servConn = {
             callback(err);
         });
     },
+    
+    //*************************************************************************/
     readProjects:     function (callback) {
         var that = this;
         this.readDir('/' + this.namespace, function (err, dirs) {
@@ -1537,6 +1546,7 @@ var servConn = {
             }
         });
     },
+    //*************************************************************************/
     chmodProject:     function (projectDir, mode, callback) {
         //socket.io
         if (this._socket === null) {
@@ -1546,9 +1556,11 @@ var servConn = {
             callback && callback(err, data);
         });
     },
+    //*************************************************************************/
     clearCache:       function () {
         window.localStorage.clear();
     },
+    //*************************************************************************/
     getHistory:       function (id, options, callback) {
         if (!this._checkConnection('getHistory', arguments)) {
             return;

@@ -606,7 +606,7 @@ var vis = {
         return widgetSets;
     },
 
-    // Return as array used widgetSets or null if no information about it
+   //*********************************************************************************************** */ 
     getUsedObjectIDs:   function () {
         var result = getUsedObjectIDs(this.views, !this.editMode);
         if (!result) {
@@ -622,6 +622,8 @@ var vis = {
                };
     },
 
+    //*********************************************************************************************** */
+    // Return as array used widgetSets or null if no information about it
     getWidgetGroup:     function (view, widget) {
         return getWidgetGroup(this.views, view, widget);
     },
