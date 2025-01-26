@@ -2966,7 +2966,7 @@
         data-vis-prev='<img src="widgets/basic/img/Prev_ValueBoolCtrl.png"></img>'
         data-vis-type="ctrl"
         data-vis-name="Bool HTML"
-        data-vis-attrs="oid;min;max;html_prepend;html_append;html_false;html_true;"
+        data-vis-attrs="oid;min;max;html_prepend;html_append;html_false;html_true;vibro/checkbox;"
         data-vis-attrs1="group.ccontrol;urlTrue;urlFalse;oidTrue/id;oidFalse/id;">
     <div
         class="vis-widget <%== this.data.attr('class') %>"
@@ -2980,6 +2980,7 @@
         data-url-false="<%= this.data.attr('urlFalse') %>"
         data-oid-true="<%=  this.data.attr('oidTrue') %>"
         data-oid-false="<%= this.data.attr('oidFalse') %>"
+        data-vibro="<%= this.data.attr('vibro') %>"
         <%= (el) -> vis.binds.basic.toggle(el) %>>
         <div class="vis-widget-body">
 			<%== this.data.attr('html_prepend') %>
