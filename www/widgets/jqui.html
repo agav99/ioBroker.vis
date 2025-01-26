@@ -376,6 +376,19 @@
             $dlg.dialog($.extend({
                 autoOpen: false,
                 open: function () {
+
+                    //$(this). это элемент xxx_dialog
+                    if (typeof options.height =='string')  
+                    {
+                        let p = options.height.indexOf('%');
+                        if (p > 0){
+                            let varprocent = parseInt(options.height.substring(0,p));
+                            var wWidth = $(window).width();
+                            var newWidth =   wWidth * varprocent/100;
+                            $(this).dialog({height:newWidth});
+                        }
+                    }
+
                     $(this).parent().find('.ui-widget-header button .ui-button-text').html('');
                     $(this).parent().css('z-index', 998);
 	            $(this).parent().css('display','inline-block');

@@ -2251,7 +2251,8 @@
                         $('#' + wid).find('.vis-fullscreen-icon').html(svgOn);
                     } else {
                         vis.binds.basic.isFullScreen = true;
-                        var element = $('#vis_container')[0];
+                        //var element = $('#vis_container')[0];
+                        var element =document.documentElement;
                         if (element.requestFullscreen) {
                             element.requestFullscreen();
                         } else if (element.mozRequestFullScreen) {
