@@ -838,14 +838,13 @@ function getUsedObjectIDs(views, isByViews) {
         }
     }
 
-    if (_views) {
+    /*if (_views) {
         var changed;
         do {
             changed = false;
             // Check containers
             for (view in views) {
                 if (!views.hasOwnProperty(view)) continue;
-
                 if (view === '___settings') continue;
 
                 for (id in views[view].widgets) {
@@ -866,13 +865,13 @@ function getUsedObjectIDs(views, isByViews) {
                                 }
                             }
                         } else {
-                            console.warn('View does not exist: "' + widgetModel.data.contains_view + '"');
+                            console.warn(`View does not exist: "${widgetModel.data.contains_view}" on View:"${view}" Widget:"${id}"`);
                         }
                     }
                 }
             }
         } while (changed);
-    }
+    }*/
 
     return {IDs: IDs, 
             byViews: _views,

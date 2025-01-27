@@ -320,7 +320,8 @@ var servConn = {
                 rememberUpgrade:                connOptions.socketForceWebSockets,
                 transports:                     connOptions.socketForceWebSockets ? ['websocket'] : undefined
             });
-
+            
+            //***************************************************** */
             this._socket.on('connect', function () {
                 that._reconnectionCount = 0; // reset counter
                 console.warn('CON_EVENT: connect'); 
@@ -387,6 +388,7 @@ var servConn = {
                 }, 50);
             });
 
+            //***************************************************** */
             this._socket.on('reauthenticate', function (err) {
                 if (that._connCallbacks.onConnChange) {
                     that._connCallbacks.onConnChange(false);
@@ -407,7 +409,7 @@ var servConn = {
                     that.reload();
                 }
             });
-
+            //***************************************************** */
             this._socket.on('connect_error', function () {
                 if (typeof $ !== 'undefined') {
                     $('.splash-screen-text').css('color', '#002951');
@@ -416,7 +418,7 @@ var servConn = {
                 console.warn('CON_EVENT: connect_error:'+ new Date());
                 that.reconnect(connOptions);
             });
-
+            //***************************************************** */
             this._socket.on('disconnect', function () {
                 that._disconnectedSince = Date.now();
                 console.warn('CON_EVENT: disconnect on:'+that._disconnectedSince);
@@ -446,7 +448,7 @@ var servConn = {
                 // reconnect
                 that.reconnect(connOptions);
             });
-
+            //***************************************************** */
             // after reconnect the "connect" event will be called
             this._socket.on('reconnect', function () {
                 var offlineTime = Date.now() - that._disconnectedSince;
@@ -459,6 +461,7 @@ var servConn = {
                 // anyway "on connect" is called
             });
 
+            //***************************************************** */
             this._socket.on('objectChange', function (id, obj) {
                 // If cache used
                 if (that._useStorage) {
@@ -476,6 +479,7 @@ var servConn = {
                 that._connCallbacks.onObjectChange && that._connCallbacks.onObjectChange(id, obj);
             });
 
+            //***************************************************** */
             this._socket.on('stateChange', function (id, state) {
                 if (!id || state === null || typeof state !== 'object') {
                     return;
@@ -516,6 +520,7 @@ var servConn = {
                 }
             });
 
+            //***************************************************** */
             this._socket.on('permissionError', function (err) {
                 if (that._connCallbacks.onError) {
                     /* {
@@ -530,6 +535,7 @@ var servConn = {
                 }
             });
 
+            //***************************************************** */
             this._socket.on('error', function (err) {
                 if (err === 'Invalid password or user name') {
                     console.warn('reauthenticate');
@@ -557,6 +563,8 @@ var servConn = {
             });
         }
     },
+
+    //************************************************************************************************* */
     logout:           function (callback) {
         if (!this._isConnected) {
             console.log('No connection!');
@@ -912,7 +920,7 @@ var servConn = {
 
                 this.getStates(IDs, function (err, data){
                     resolve({err:err,   //string || null
-                             data:data  //obj | undefined
+                             data:data  //obj || undefined
                             });
                 });
         });
