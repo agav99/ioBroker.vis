@@ -873,10 +873,10 @@ function getUsedObjectIDs(views, isByViews) {
         } while (changed);
     }*/
 
-    return {IDs: IDs, 
-            byViews: _views,
+    return {IDs: IDs,  //список тегов (стррок)
+            byViews: _views, //список тегов по кадрам
             visibility: visibility,
-            bindings: bindings,
+            bindings: bindings, //соварь  тег - объект
             lastChanges: lastChanges, 
             signals: signals
         };

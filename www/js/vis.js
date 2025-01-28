@@ -531,35 +531,33 @@ var vis = {
     },
 
      /****************************************************************/
-    loadWidgetSet:      function (name, callback) {
+    asyncLoadWidgetSet:   async  function (name) {
+        console.debug(`loading widget set "${name}"`);
+
         var url = `./widgets/${name}.html?visVersion=${this.version}`;
         var that = this;
+        return new Promise((resolve, reject) => {
         $.ajax({
             url: url,
             type: 'GET',
             dataType: 'html',
             cache: this.useCache,
             success: function (data) {
-                setTimeout(function () {
+                    
                     try {
                         $('head').append(data);
                     } catch (e) {
                         console.error(`Cannot load widget set "${name}": ${e}`);
                     }
-                    that.toLoadSetsCount -= 1;
-                    if (that.toLoadSetsCount <= 0) {
-                        that.showWaitScreen(true, null, null, 100);
-                        setTimeout(function () {
-                            callback.call(that);
-                        }, 100);
-                    } else {
                         that.showWaitScreen(true, null, null, parseInt((100 - that.waitScreenVal) / that.toLoadSetsCount, 10));
-                    }
-                }, 0);
+                        resolve();
+                        
             },
             error: function (jqXHR, textStatus, errorThrown) {
                 that.conn.logError(`Cannot load widget set ${name} ${errorThrown}`);
+                       reject();
             }
+        });
         });
     },
 
@@ -639,7 +637,7 @@ var vis = {
         return getWidgetGroup(this.views, view, widget);
     },
     //*********************************************************************************************** */
-    loadWidgetSets:     function (callback) {
+    asyncloadWidgetSets:   async  function () {
         var arrSets = [];
 
         // If widgets are preloaded
@@ -673,17 +671,17 @@ var vis = {
             $('#widgetset_counter').html('<span style="font-size: 10px">(' + this.toLoadSetsCount + ')</span>');
         }
 
-        var that = this;
         if (this.toLoadSetsCount) {
             //Есть что загружать
             for (var j = 0, len = this.toLoadSetsCount; j < len; j++) {
-                _setTimeout(function (_i) {
-                    //callback вызовится после окончания загрузки всех пакетов
-                    that.loadWidgetSet(arrSets[_i], callback);
-                }, 100, j);
+                try{
+                  await this.asyncLoadWidgetSet(arrSets[j]);
             }
-        } else {
-            callback && callback.call(this);
+                catch(err){
+
+                }
+            }
+            this.showWaitScreen(true, null, null, 100);
         }
     },
     //*********************************************************************************************** */
@@ -705,7 +703,8 @@ var vis = {
     
     //*********************************************************************************************** */
     //onReadyCallBack - function(viewDiv, view, error)
-    init:               function (onReadyCallBack) {
+    //вернет объект {viewDiv, view,error}
+    asyncInit:   async function () {
         if (this.initialized) {
             return;
         }
@@ -720,30 +719,21 @@ var vis = {
          this.binds.hqWidgetsExt.hqInit();
          }*/
 
-        var that = this;
+        //var that = this;
         //this.loadRemote(this.loadWidgetSets, this.initNext);
-        /*this.loadWidgetSets(function () {
-            that.initNext(onReadyCallBack);
-        });*/
 
-        this.asyncInitNext(onReadyCallBack)
-        .then(
-            function(result) {
-                console.warn('then (init->asyncInitNext) OK');
+        await this.asyncloadWidgetSets();
 
-                if (onReadyCallBack){
-                   if (result) 
-                         onReadyCallBack(result.viewDiv, result.view)
-                   else  onReadyCallBack(null, null);
+        try{
+          var res = await this.asyncInitNext()
+          return res;
                 }
-            },
-            function(error){
-                console.warn('then (init->asyncInitNext) Error: '+error);
-                if (onReadyCallBack){
-                    onReadyCallBack(null, null, error);
+        catch{
+          return {viewDiv:null,
+                  view:null,
+                  error:"exception asyncInitNext"
             }
            }
-        )
     },
 
     //*********************************************************************************************** */
@@ -881,8 +871,8 @@ var vis = {
         if (that.activeView) {
             return  await this.asyncChangeView(this.activeViewDiv);
         }
-        else{
-            return {viewDiv:null,
+        else
+        {   return {viewDiv:null,
                     view:null,
                     error:"no activeView"
                    };
@@ -1410,11 +1400,11 @@ var vis = {
 
         console.debug("\u001b[1;32m      then loaded view:"+viewDiv+"  isMain:"+isMain);
 
-        var mWidget = document.getElementById("w00022");
+       /* var mWidget = document.getElementById("w00022");
         var v0 =window.getComputedStyle(mWidget).display === "none";
         var v1= ($(mWidget).css('display') == 'none' || $(mWidget).css("visibility") == "hidden");
         var v2= $(mWidget).is(":hidden");
-        console.debug(`*3********** elem:${mWidget.hidden} ${v0} jqElem:${v1}  jqElemP:${v2} `);    
+        console.debug(`*3********** elem:${mWidget.hidden} ${v0} jqElem:${v1}  jqElemP:${v2} `);    */
               
         //пока созданный Div принадледит Root элементу "vis_container"
         //Для рекурсивно загружаемых дочерних они будут распределены по родителям  после renderViews
@@ -4855,7 +4845,7 @@ function main($, onReadyCallBack) {
 
     //-------------------------------------------------------------------------------
     //вернет объект {viewDiv, view, error}
-    async function  afterInit() {
+    async function  asyncAfterInit() {
         // Get user groups info
         let res = await vis.conn.getGroupsAsync(); //(function (err, userGroups) {
         vis.userGroups = res.groups || {};
@@ -4902,7 +4892,10 @@ function main($, onReadyCallBack) {
             vis.editMode && vis.editInit && vis.editInit();
             vis.isFirstTime = false;
             
-            return new Promise((resolve, reject) => {
+            //вернет объект {viewDiv, view,error}
+            return await vis.asyncInit();
+            
+            /*new Promise((resolve, reject) => {
 
                 vis.init(function(viewDiv, view, error){
                     resolve({viewDiv:viewDiv,  
@@ -4910,7 +4903,9 @@ function main($, onReadyCallBack) {
                              error:error
                             })
                 });
-            });
+            });*/
+
+
         } else {
             return {viewDiv:null,  
                     view:null,
@@ -5021,7 +5016,7 @@ function main($, onReadyCallBack) {
                   return;
                 } 
 
-                res = await afterInit();
+                res = await asyncAfterInit();
                 console.warn(`FINISH LOADING: viewDiv:"${res.viewDiv}" view:"${res.view}"  error:${res.error} `);
                 vis.showWaitScreen(false);
                     
