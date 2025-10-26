@@ -340,7 +340,7 @@ var vis = {
         active:      [], //string array for saving tag names - на которые клиент подписан, общий для всех прогруженных кадров
         activeLinkCount: {}, //int array for saving LinkCount of corresponding active tag name. ( full symmetrical for  "Active" array) 
                           //Список количества ссылок на tagId из массива active. Массивы active[] и activeLinkCount[] синхронны, сопоставлены друг с другом
-        activeViews: [], //Список загруженых Представлений и клонов
+        activeViews: [], //Список загруженых Представлений и клонов (те тут и все мнемосимволы)
 
         //формруем общие массивы тегов на чтение и подписку (по кадру и всем внутренним контейнерным примитивам)
         //byLoadingView:{}, //ключ - MainVieeId. данные: oids_get[]   oids_subscribe[]  
@@ -376,7 +376,7 @@ var vis = {
 
 
     /************************************************************/
-//Сохраням значение локальной переменной в локальный стор
+    //Сохраням значение локальной переменной в локальный стор
     SavetoLoacalStore: function(varName, value){
         var p = varName.lastIndexOf('.val');
         if(p>0) varName = varName.slice(0,p);
@@ -482,8 +482,8 @@ var vis = {
 
         var o = {};
         var created = false;
-        if (this.states.attr(`${id}.val`) != val) {
-            //Если значени изменилось
+        if (this.states.attr(`${id}.val`) != val) 
+        {   //Если значени изменилось
             o[`${id}.lc`] = t;
         } else {
             o[`${id}.lc`] = this.states.attr(`${id}.lc`);
@@ -537,27 +537,27 @@ var vis = {
         var url = `./widgets/${name}.html?visVersion=${this.version}`;
         var that = this;
         return new Promise((resolve, reject) => {
-        $.ajax({
-            url: url,
-            type: 'GET',
-            dataType: 'html',
-            cache: this.useCache,
-            success: function (data) {
+            $.ajax({
+                url: url,
+                type: 'GET',
+                dataType: 'html',
+                cache: this.useCache,
+                success: function (data) {
                     
-                    try {
-                        $('head').append(data);
-                    } catch (e) {
-                        console.error(`Cannot load widget set "${name}": ${e}`);
-                    }
+                        try {
+                            $('head').append(data);
+                        } catch (e) {
+                            console.error(`Cannot load widget set "${name}": ${e}`);
+                        }
                         that.showWaitScreen(true, null, null, parseInt((100 - that.waitScreenVal) / that.toLoadSetsCount, 10));
                         resolve();
                         
-            },
-            error: function (jqXHR, textStatus, errorThrown) {
-                that.conn.logError(`Cannot load widget set ${name} ${errorThrown}`);
+                },
+                error: function (jqXHR, textStatus, errorThrown) {
+                       that.conn.logError(`Cannot load widget set ${name} ${errorThrown}`);
                        reject();
-            }
-        });
+                }
+            });
         });
     },
 
@@ -676,7 +676,7 @@ var vis = {
             for (var j = 0, len = this.toLoadSetsCount; j < len; j++) {
                 try{
                   await this.asyncLoadWidgetSet(arrSets[j]);
-            }
+                }
                 catch(err){
 
                 }
@@ -710,9 +710,9 @@ var vis = {
         }
 
         let settings = window.getStoredObjects(this.storageKeySettings);
-            if (settings) {
-                this.settings = $.extend(this.settings, settings);
-            }
+        if (settings) {
+             this.settings = $.extend(this.settings, settings);
+        }
 
         // Late initialization (used only for debug)
         /*if (this.binds.hqWidgetsExt) {
@@ -721,19 +721,19 @@ var vis = {
 
         //var that = this;
         //this.loadRemote(this.loadWidgetSets, this.initNext);
-
+        
         await this.asyncloadWidgetSets();
-
+        
         try{
           var res = await this.asyncInitNext()
           return res;
-                }
+        }
         catch{
           return {viewDiv:null,
                   view:null,
                   error:"exception asyncInitNext"
-            }
-           }
+                 }
+        }
     },
 
     //*********************************************************************************************** */
@@ -944,7 +944,7 @@ var vis = {
             if (viewModel && viewModel.settings.sizex && viewModel.settings.sizey)
             {
                 let z = Math.min(container.width()/viewModel.settings.sizex, container.height()/viewModel.settings.sizey); 
-                dbglog =   dbglog +` setZoom=${z}`
+                dbglog =   "\u001b[1;33m"+dbglog +` setZoom=${z}`
                 
                 $(this).css({'transform-origin':         'top left',
                              '-webkit-transform-origin': 'top left',
@@ -1174,8 +1174,10 @@ var vis = {
 
         let viewModelId = decodeURIComponent(viewInfo.viewModelId);
         viewDiv = decodeURIComponent(viewDiv + viewInfo.exName); //join with Params to have unique ViewClone name
-        
-        console.debug("\u001b[1;32m ***** render View: " + `div:"${saveViewDiv}"->"${viewDiv}"  viewId:"${viewInfo.viewID}" viewUri:"${viewInfo.viewURI}"`+
+
+        //признак загрузки базового(основного кадра) а не рекурсивных контейнерных виджетов;
+        let isMain = parentContainerWidgetId == undefined;
+        console.debug("\u001b[1;32m ***** Start Render "+(isMain?"MAIN":"") +" View: " + `div:"${saveViewDiv}"->"${viewDiv}"   viewId:"${viewInfo.viewID}" viewUri:"${viewInfo.viewURI}"`+
                                   ` parentWidgetId:"${parentContainerWidgetId}"  *****`); // mainView:${parentMainViewDivId}
        /* Пояснение:
        ***** render View: div:AgavSubA->AgavSubA_A               viewId:AgavSubA_A               parentWidgetId:undefined        mainView:undefined 
@@ -1184,10 +1186,6 @@ var vis = {
        
        ***** render View: div:g00001->g00001                     viewId:Agav       viewUri:Agav  parentWidgetId:undefined  *****
        */                                
-
-
-        //признак загрузки базового(основного кадра) а не рекурсивных контейнерных виджетов;
-        let isMain = parentContainerWidgetId == undefined;
 
         if (!this.editMode && !$('#commonTheme').length) {
             $('head').prepend('<link rel="stylesheet" type="text/css" href="' +
@@ -1398,14 +1396,8 @@ var vis = {
         //показываем контейнер    
         !hidden && $view.show();
 
-        console.debug("\u001b[1;32m      then loaded view:"+viewDiv+"  isMain:"+isMain);
+        console.debug("\u001b[1;32m ***** Finish Render "+(isMain?"MAIN":"") +" View: " + `"${viewDiv}"`);  
 
-       /* var mWidget = document.getElementById("w00022");
-        var v0 =window.getComputedStyle(mWidget).display === "none";
-        var v1= ($(mWidget).css('display') == 'none' || $(mWidget).css("visibility") == "hidden");
-        var v2= $(mWidget).is(":hidden");
-        console.debug(`*3********** elem:${mWidget.hidden} ${v0} jqElem:${v1}  jqElemP:${v2} `);    */
-              
         //пока созданный Div принадледит Root элементу "vis_container"
         //Для рекурсивно загружаемых дочерних они будут распределены по родителям  после renderViews
         //Для остальных перенос из vis_container в нужный родительский выполняется в callBack
@@ -1421,20 +1413,32 @@ var vis = {
               
             if (commonViewOids.oids_get.length > 0){
 
-                console.info("\u001b[1;35m   SUBSCRIBE2 > get:" + commonViewOids.oids_get.length +
-                            ' subscribe:' + commonViewOids.oids_subscribe.length+' states.');
+                //из массива  commonViewOids.oids_get  вырезаем в отдельный массив локальные переменные "local_xxxx"
+                let localIds = commonViewOids.oids_get.filter((oid)=>oid.startsWith("local_"));
+                if (localIds.length > 0){
+                    commonViewOids.oids_get =  commonViewOids.oids_get.filter((oid)=>!oid.startsWith("local_"));
+                }
+
+                console.info("\u001b[1;35m    afterFinishLoadingView > get from srv:" + commonViewOids.oids_get.length +
+                            ' subscribe:' + commonViewOids.oids_subscribe.length+' states.'+
+                            ' locals:'+localIds.length);
 
                 //Запрашиваем с сервера значения (по полному списку переменных кадра, с учетом дочерних контейнеров) и выполняем подписку на недостающие(новые)
                 //вернет объект {err,data} 
                 var res = await that.conn.getStatesAsync(commonViewOids.oids_get);
                 res.error && that.showError(res.error);
-                
                 //заполняем  states[]
                 that.updateStates(res.data);
                 
                 //Запрос на подписку (только переменые на которые ранее не подписывались ни на одном кадре)
                 if (commonViewOids.oids_subscribe.length)
                     that.conn.subscribe(commonViewOids.oids_subscribe);
+
+                if (localIds.length > 0)    
+                {   for (var i=0; i<localIds.length; ++i) {
+                        that.updateState(localIds[i], undefined); //передаем undefined тк все равно возьмем из State
+                    }
+                }
             }
             
             //финальный отложенный возврат (зачем через таймер пока не понятно)
@@ -1442,7 +1446,7 @@ var vis = {
                 setTimeout(function () {
                     $('#visview_' + viewDiv).trigger('rendered');
 
-                    console.debug("\u001b[1;32m script trigger <rendered> for view:"+viewDiv);
+                    console.debug("\u001b[1;32m   Script trigger <rendered> for view:"+viewDiv);
                     resolve();
                 }, 0);
             });
@@ -2387,7 +2391,8 @@ var vis = {
         var $widget = $('#' + id);
         
         // Add to the global array of widgets
-        try {
+        try
+        {
             var userGroups;
             if (!this.editMode && widget.data['visibility-groups'] && widget.data['visibility-groups'].length) {
                 userGroups = widget.data['visibility-groups'];
@@ -2476,6 +2481,7 @@ parentContainerWidgetId: parentContainerWidgetId, //
             //************************************ */
             var $wid = null;
 
+            //устанавливаем размер и попложение   
             if (widget.style && !widgetData._no_style) {
                 $wid = $wid || $('#' + id);
 
@@ -2494,13 +2500,14 @@ parentContainerWidgetId: parentContainerWidgetId, //
                 $wid.css(widget.style);
             }
 
+            //Добавляем указанные класс из конфигурации
             if (widget.data && widget.data.class) {
                 $wid = $wid || $('#' + id);
                 $wid.addClass(widget.data.class);
             }
 
+            //добавляем класс по имени шаблона примитива
             var $tpl = $('#' + widget.tpl);
-
             $wid && $wid.addClass('vis-tpl-' + $tpl.data('vis-set') + '-' + $tpl.data('vis-name'));
 
             if (this.editMode &&  (widget.tpl=='tplHtml')){
@@ -2514,11 +2521,6 @@ parentContainerWidgetId: parentContainerWidgetId, //
                    ) {
                     var mWidget = document.getElementById(id);
                     $(mWidget).hide();
-
-                    var v0 =window.getComputedStyle(mWidget).display === "none";
-                    var v1= ($(mWidget).css('display') == 'none' || $(mWidget).css("visibility") == "hidden");
-                    var v2= $(mWidget).is(":hidden");
-                    console.debug(`*1********** elem:${mWidget.hidden} ${v0} jqElem:${v1}  jqElemP:${v2} `);    
 
                     if (mWidget &&
                         mWidget._customHandlers &&
@@ -2640,10 +2642,12 @@ parentContainerWidgetId: parentContainerWidgetId, //
 
         var that = this;
 
-        console.warn('*********************** changeView. '+viewDiv+' | '+view+' **************************');
+        let dbg = "";
+        if (viewDiv!=view) dbg=` (div:${viewDiv})`; 
+        console.log('%c *********************** ChangeView: '+ view + dbg+' *****************',"color:green; font-size:20px;");
         //PageA | PageA
         //PageA?B | PageA?B
-        //g0001 | PageA
+        //PageA | g0001
 
         var effect = hideOptions !== undefined && hideOptions !== null && hideOptions.effect !== undefined && hideOptions.effect !== null && hideOptions.effect;
         if (!effect) {
@@ -2759,6 +2763,9 @@ parentContainerWidgetId: parentContainerWidgetId, //
             that.destroyUnusedViews();
         }   
         vis.autoResizeContainers(); 
+        
+        console.log('%c *********************** ChangeView: '+ view + dbg+' ***************** DONE',"color:green; font-size:20px;");
+        
         
         // remember last click for de-bounce
         this.lastChange = Date.now();
@@ -2879,6 +2886,9 @@ parentContainerWidgetId: parentContainerWidgetId, //
                 } else {
                     that.views = res.data;
                 }
+
+
+                
                 var _data = that.getUsedObjectIDs();
                 that.subscribing.IDs = _data.IDs;
                 that.subscribing.byViews = _data.byViews;
@@ -3719,7 +3729,9 @@ parentContainerWidgetId: parentContainerWidgetId, //
 
                     if ($widget){ 
                         if (bindItem.attr=="background-color" ||
-                            bindItem.attr=="height" 
+                            bindItem.attr=="height" ||
+                            bindItem.attr=="border-color" ||
+                            bindItem.attr=="opacity"
                            )
                             { 
                              $widget.css(bindItem.attr,value);
@@ -3736,8 +3748,13 @@ parentContainerWidgetId: parentContainerWidgetId, //
                             if (value.length>0)     $widget.addClass(value);
                             done=true;
                         }
+                        else {
+                            console.debug('                        _____  attr:'+bindItem.attr);
+
+                        }
                         ; //font-weight/height/left/top/width/
                     }
+
                     if (!done){
                          //Append to array need rerendered widget
                          if (that.subscribing.activeViews.indexOf(bindItem.view) >=0 ){ //optimization, do not proceed if view is't visible
@@ -4208,6 +4225,12 @@ parentContainerWidgetId: parentContainerWidgetId, //
         if (id.startsWith('local_')) {
             //вызов только из _setValue()
             //this.states.attr(state);  не требуется  тк был выполнен ранее в _setValue()
+            state= {
+                    val: this.states[`${id}.val`],
+                    ts: this.states[`${id}.ts`],
+                    lc: this.states[`${id}.lc`],
+                    ack: this.states[`${id}.ack`]
+                   } 
         }else {
             if (this.editMode) {
                 this.states[`${id}.val`] = state.val;
@@ -4242,11 +4265,6 @@ parentContainerWidgetId: parentContainerWidgetId, //
                     that.isWidgetFilteredOut(view, wid)) {
                     $(mmWidget).hide();
                     
-                    var v0 =window.getComputedStyle(mmWidget).display === "none";
-                    var v1= ($(mmWidget).css('display') == 'none' || $(mmWidget).css("visibility") == "hidden");
-                    var v2= $(mmWidget).is(":hidden");
-                    console.debug(`*2********** elem:${mmWidget.hidden} ${v0}  jqElem:${v1}  jqElemP:${v2} `);   
-
                     if (mmWidget &&
                         mmWidget._customHandlers &&
                         mmWidget._customHandlers.onHide
@@ -4255,10 +4273,6 @@ parentContainerWidgetId: parentContainerWidgetId, //
                       }
                 } else {
                     $(mmWidget).show();
-                    var v0 =window.getComputedStyle(mmWidget).display === "none";
-                    var v1= ($(mmWidget).css('display') == 'none' || $(mmWidget).css("visibility") == "hidden");
-                    var v2= $(mmWidget).is(":hidden");
-                    console.debug(`*2b********** elem:${mmWidget.hidden} ${v0}  jqElem:${v1}  jqElemP:${v2} `);  
 
                     if (mmWidget &&
                         mmWidget._customHandlers &&
@@ -4541,8 +4555,6 @@ parentContainerWidgetId: parentContainerWidgetId, //
                 //|| this.states[_id + '.val'] === null  //зачем
                 //|| this.states[_id + '.val'] == 'null'
                 ){
-
-
                 let initValue='null';
                 if (_id.indexOf('local_') === 0){
                     //initValue = this.getUrlParameter(_id);           // using url parameter to set initial value of local variable
@@ -4919,9 +4931,9 @@ function main($, onReadyCallBack) {
     vis.conn.init(null, {
         mayReconnect: typeof app !== 'undefined' ? app.mayReconnect : null,
         onAuthError:  typeof app !== 'undefined' ? app.onAuthError  : null,
-       
+        
         onConnChange:  async function (isConnected) {
-            console.log("\u001b[1;35m onConnChange isConnected="+isConnected);
+            console.log("\u001b[1;35m onConnChange: isConnected="+isConnected);
 
             if (isConnected) {
                 //$('#server-disconnect').dialog('close');
@@ -4955,7 +4967,7 @@ function main($, onReadyCallBack) {
                         'login' : vis.loginRequired
                     });
                 
-                console.debug("\u001b[1;32m  Subscribe to 3 control tags...");
+                console.debug("\u001b[1;35m onConnChange: Subscribe to 3 control tags...");
                 vis.conn.subscribe([vis.conn.namespace + '.control.instance',
                                     vis.conn.namespace + '.control.data',
                                     vis.conn.namespace + '.control.command']);                    
@@ -4966,7 +4978,7 @@ function main($, onReadyCallBack) {
                     vis.subscribing.IDs = vis.subscribing.IDs || [];
                     vis.subscribing.byViews = vis.subscribing.byViews || {};
                        
-                    console.warn(' INIT SCRIPT');
+                    console.debug("\u001b[1;35m onConnChange: INIT SCRIPT");
                     // then add custom scripts
                     if (!vis.editMode && vis.views && vis.views.___settings && vis.views.___settings.scripts ) {
                         var script = document.createElement('script');
@@ -4976,9 +4988,9 @@ function main($, onReadyCallBack) {
                     
                     //Заполнение states[] если в нем не найдены   
                     if (vis.subscribing.IDs) {
-                        console.warn('INIT All vis project tags... count:'+vis.subscribing.IDs.length);  
+                        console.debug("\u001b[1;35m onConnChange: INIT All vis project tags... count:"+vis.subscribing.IDs.length);  
                           vis.initStates(vis.subscribing.IDs, true);
-                        console.warn('INIT All vis project tags done -------');   
+                        console.debug("\u001b[1;35m onConnChange: INIT All vis project tags done -------");   
                       };   
                 }
 
@@ -4986,7 +4998,7 @@ function main($, onReadyCallBack) {
                 $('.vis-view-disabled').hide();
 
                 // Read all active states from server
-                console.warn(' INIT GET prevACTIVE STATES ' + (vis.editMode ? 'all' : vis.subscribing.active.length) + ' states.');
+                console.debug("\u001b[1;35m onConnChange: INIT GET prevACTIVE STATES " + (vis.editMode ? 'all' : vis.subscribing.active.length) + ' states.');
                 res = await vis.conn.getStatesAsync(vis.editMode ? null : vis.subscribing.active);// function (error, data) {
                 
                 //Окно об ошибке 
@@ -5017,7 +5029,10 @@ function main($, onReadyCallBack) {
                 } 
 
                 res = await asyncAfterInit();
-                console.warn(`FINISH LOADING: viewDiv:"${res.viewDiv}" view:"${res.view}"  error:${res.error} `);
+
+                let dbg= res.viewDiv==res.view?"":`(div:"${res.viewDiv}")`;
+                console.debug(`\u001b[1;35m onConnChange: FINISH LOADING: ActiveView:"${res.view}" ${dbg}  error:${res.error} `);
+
                 vis.showWaitScreen(false);
                     
                 onReadyCallBack && onReadyCallBack(res.viewDiv, res.view, res.error);

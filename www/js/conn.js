@@ -324,7 +324,7 @@ var servConn = {
             //***************************************************** */
             this._socket.on('connect', function () {
                 that._reconnectionCount = 0; // reset counter
-                console.warn('CON_EVENT: connect'); 
+                console.log("%c CON_EVENT: connect","color:green; font-size:20px;"); 
 
                 if (that._disconnectedSince) {
                     var offlineTime = Date.now() - that._disconnectedSince;
@@ -916,6 +916,11 @@ var servConn = {
     },
 
     getStatesAsync: async function (IDs) {
+        if (IDs && !IDs.length){
+            return {err: null,
+                    data: undefined
+                   };
+        }
         return new Promise((resolve, reject) => {
 
                 this.getStates(IDs, function (err, data){
