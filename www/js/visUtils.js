@@ -485,7 +485,7 @@ function getUsedObjectIDs(views, isByViews) {
         console.log('Check why views are not yet loaded!');
         return null;
     }
-    console.warn('________INIT PROJECT_____')
+    console.info('________INIT PROJECT_____')
 
     var _views = isByViews ? {} : null;  //null for EditorMode.  After sets this object  to vis.subscribing.byViews{}[]->tagIDs  and for EditMode changing to {}
                                          //Same as IDs[], but groupig by ViewName.
@@ -515,6 +515,55 @@ function getUsedObjectIDs(views, isByViews) {
         if (view === '___settings') continue;
 
         if (_views) _views[view] = [];
+
+        //Сначала перебираем примитивы извлекаем с типом Relative
+        if (vis.editMode){
+        let arr=[];
+      
+        for (id in views[view].widgets) {
+            if (!views[view].widgets.hasOwnProperty(id)) continue;
+
+            widgetModel=views[view].widgets[id];
+            if (!widgetModel.grouped && widgetModel.style.display=='inline-block' && widgetModel.style["z-index"]) 
+            {
+                widgetModel['widgetId']=id;
+                arr.push(widgetModel);
+            }
+        }
+
+        if (arr.length > 0){
+            arr.sort(function(a,b){
+                        let z1 = parseInt(a.style["z-index"]) 
+                        let z2 = parseInt(b.style["z-index"])
+                        if (z1<z2) return -1
+                        if (z1>z2) return 1
+                        return 0;
+                    }) 
+            let newWidgets={};
+            for ( let i=0; i<arr.length; ++i){
+                newWidgets[arr[i].widgetId]=arr[i];
+            }
+            
+
+            for (id in views[view].widgets) {
+                if (!views[view].widgets.hasOwnProperty(id)) continue;
+    
+                widgetModel=views[view].widgets[id];
+                if (!widgetModel.grouped && widgetModel.style.display=='inline-block' && widgetModel.style["z-index"]) 
+                {
+                  // уже добавили
+                }
+                else 
+                {
+                    newWidgets[id]=widgetModel
+                }
+          }
+           views[view].widgets = newWidgets; 
+        }
+    }
+
+
+
 
         //console.debug('loading view:'+ view)
         for (id in views[view].widgets) {
